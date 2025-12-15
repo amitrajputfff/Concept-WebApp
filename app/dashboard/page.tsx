@@ -5,7 +5,6 @@ import { ProtectedRoute } from '@/lib/auth-context';
 import { generateRiskMemo } from '@/lib/ai';
 import { AppSidebar } from '@/components/app-sidebar';
 import { SiteHeader } from '@/components/site-header';
-import { SectionCards } from '@/components/section-cards';
 import { ChartAreaInteractive } from '@/components/chart-area-interactive';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -23,10 +22,15 @@ import {
   AlertCircle,
   Zap,
   Sparkles,
-  Loader,
+  Loader2,
+  FileText,
+  ThumbsUp,
+  ThumbsDown,
+  ArrowRight
 } from 'lucide-react';
 import { toast } from 'sonner';
 
+// --- MOCK DATA ---
 const mockBusinesses = [
   {
     id: 'taco-rico',
@@ -87,6 +91,7 @@ const mockBusinesses = [
   },
 ];
 
+// --- HELPER COMPONENTS ---
 function ContextModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   if (!isOpen) return null;
   
@@ -164,12 +169,14 @@ function ContextModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
   );
 }
 
-
+// --- MAIN CONTENT ---
 function DashboardContent() {
   const [selectedBusiness, setSelectedBusiness] = useState('taco-rico');
   const [aiMemo, setAiMemo] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [showContext, setShowContext] = useState(false);
+  const [isApproving, setIsApproving] = useState(false);
+  const [isApproved, setIsApproved] = useState(false);
 
   const handleGenerateMemo = async () => {
     setIsGenerating(true);
@@ -202,12 +209,39 @@ function DashboardContent() {
       });
       
       setAiMemo(result);
+      setIsApproved(false); // Reset approval status when new memo is generated
       toast.success('Risk memo generated successfully');
     } catch (error) {
       toast.error('Failed to generate memo');
       console.error(error);
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  const handleApproveFunding = async () => {
+    if (!aiMemo) {
+      toast.error('Please generate a risk memo first');
+      return;
+    }
+
+    setIsApproving(true);
+    const currentBusiness = mockBusinesses.find((b) => b.id === selectedBusiness);
+    
+    try {
+      // Simulate API call to approve funding
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      setIsApproved(true);
+      toast.success(`Funding approved for ${currentBusiness?.name}!`, {
+        description: 'Loan documents have been sent for signature.',
+        duration: 5000,
+      });
+    } catch (error) {
+      toast.error('Failed to approve funding');
+      console.error(error);
+    } finally {
+      setIsApproving(false);
     }
   };
 
@@ -222,231 +256,251 @@ function DashboardContent() {
       }
     >
       <AppSidebar />
-      <SidebarInset>
+      <SidebarInset className="flex flex-col h-screen overflow-hidden">
         <ContextModal isOpen={showContext} onClose={() => setShowContext(false)} />
         
-        <SiteHeader onContextClick={() => setShowContext(true)} />
+        {/* Header - Fixed at top */}
+        <div className="sticky top-0 z-10 shrink-0 bg-background border-b">
+          <SiteHeader onContextClick={() => setShowContext(true)} />
+        </div>
 
-        <div className="flex flex-1 flex-col h-screen overflow-hidden">
-          <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6 shrink-0">
-            <SectionCards businessId={selectedBusiness} />
-          </div>
-
-          <div className="flex-1 min-h-0 px-3 sm:px-4 lg:px-6 pb-6">
+        {/* Main Workspace - Fills remaining height, no window scroll */}
+        <div className="flex flex-1 flex-col min-h-0 overflow-hidden bg-slate-50/50">
+          <div className="flex-1 h-full p-4 lg:p-6">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6 h-full">
-                {/* Business List */}
-                <div className="lg:col-span-4 flex flex-col h-full">
-                  {/* Header - Fixed */}
-                  <div className="flex items-center justify-between pb-4 shrink-0">
+                
+                {/* --- LEFT SIDE: Business List (Scrollable) --- */}
+                <div className="lg:col-span-4 flex flex-col h-full overflow-hidden">
+                  {/* List Header - Fixed */}
+                  <div className="flex items-center justify-between pb-4 shrink-0 px-1">
                     <div>
                       <h3 className="text-sm font-semibold text-slate-900">Opportunity Pipeline</h3>
                       <p className="text-xs text-slate-500 mt-0.5">Ranked by AI match score</p>
                     </div>
-                    <Badge variant="outline" className="text-xs">
+                    <Badge variant="secondary" className="text-xs">
                       {mockBusinesses.length} Active
                     </Badge>
                   </div>
                   
-                  {/* Scrollable Cards Container */}
-                  <div className="flex-1 overflow-y-auto px-2 py-3 space-y-4 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-slate-100">
-                    {/* Business Cards */}
+                  {/* Cards Container - Scrollable Area */}
+                  <div className="flex-1 overflow-y-auto px-2 py-2 space-y-4 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
                     {mockBusinesses.map((biz, idx) => (
-                  <Card
-                    key={biz.id}
-                    onClick={() => {
-                      setSelectedBusiness(biz.id);
-                      setAiMemo(null); // Clear previous memo
-                      toast.success(`Viewing ${biz.name}`);
-                    }}
-                    className={`cursor-pointer transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5 relative ${
-                      selectedBusiness === biz.id
-                        ? 'border-teal-500 bg-teal-50/50 shadow-md ring-2 ring-teal-500/20'
-                        : 'border-slate-200 hover:border-teal-300'
-                    }`}
-                  >
-                    {/* Rank Badge */}
-                    <div className={`absolute -left-2 -top-2 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shadow-md ${
-                      idx === 0 ? 'bg-gradient-to-br from-amber-400 to-orange-500 text-white' :
-                      idx === 1 ? 'bg-gradient-to-br from-slate-300 to-slate-400 text-slate-700' :
-                      idx === 2 ? 'bg-gradient-to-br from-amber-600 to-amber-700 text-white' :
-                      'bg-slate-200 text-slate-600'
-                    }`}>
-                      {idx + 1}
-                    </div>
-                    <CardHeader className="pb-3">
-                      <div className="flex justify-between items-start gap-2">
-                        <div className="flex-1">
-                          <CardTitle className="text-lg flex items-center gap-2 flex-wrap">
-                            {biz.name}
-                            {biz.matchScore && biz.matchScore >= 95 && (
-                              <Badge className="bg-gradient-to-r from-amber-400 to-orange-500 text-white border-0 shadow-md">
-                                <Sparkles size={12} className="mr-1" />
-                                Best Match
-                              </Badge>
-                            )}
-                            {biz.urgency === 'high' && (
-                              <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
-                                <AlertCircle size={12} className="mr-1" />
-                                Urgent
-                              </Badge>
-                            )}
-                          </CardTitle>
-                          {biz.location && (
-                            <CardDescription className="mt-1">{biz.location} • {biz.industry}</CardDescription>
-                          )}
+                      <Card
+                        key={biz.id}
+                        onClick={() => {
+                          setSelectedBusiness(biz.id);
+                          setAiMemo(null);
+                          setIsApproved(false);
+                          toast.success(`Viewing ${biz.name}`);
+                        }}
+                        className={`cursor-pointer transition-all duration-200 hover:shadow-lg relative ${
+                          selectedBusiness === biz.id
+                            ? 'border-teal-500 bg-teal-50/50 shadow-md ring-1 ring-teal-500/20'
+                            : 'border-slate-200 hover:border-teal-300 bg-white'
+                        }`}
+                      >
+                        {/* Rank Badge */}
+                        <div className={`absolute -left-2 -top-2 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shadow-sm z-10 ${
+                          idx === 0 ? 'bg-gradient-to-br from-amber-400 to-orange-500 text-white' :
+                          idx === 1 ? 'bg-gradient-to-br from-slate-300 to-slate-400 text-slate-700' :
+                          idx === 2 ? 'bg-gradient-to-br from-amber-600 to-amber-700 text-white' :
+                          'bg-slate-200 text-slate-600'
+                        }`}>
+                          {idx + 1}
                         </div>
-                        {biz.riskScore && (
-                          <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 shrink-0">
-                            {biz.riskScore}
-                          </Badge>
-                        )}
-                      </div>
-                      {biz.opportunity && (
-                        <div className="mt-2 flex items-center gap-1 text-xs text-teal-600 font-medium">
-                          <Zap size={12} />
-                          {biz.opportunity}
-                        </div>
-                      )}
-                    </CardHeader>
-                    <CardContent className="space-y-2">
-                      <div className="flex gap-2 flex-wrap">
-                        {biz.integrations?.map((int) => (
-                          <Badge key={int} variant="outline" className="text-xs">
-                            <CheckCircle size={12} className="text-teal-500 mr-1" />
-                            {int}
-                          </Badge>
-                        ))}
-                      </div>
-                      
-                      {biz.id === 'taco-rico' && biz.alert ? (
-                        <Card className="bg-white border-teal-100 shadow-sm">
-                          <CardContent className="pt-3">
-                            <div className="flex items-center gap-2 text-teal-700 font-semibold text-sm mb-1">
-                              <TrendingUp size={16} /> {biz.alert}
+                        <CardHeader className="pb-3 pt-4">
+                          <div className="flex justify-between items-start gap-2">
+                            <div className="flex-1">
+                              <CardTitle className="text-base font-bold flex items-center gap-2 flex-wrap">
+                                {biz.name}
+                                {biz.matchScore && biz.matchScore >= 95 && (
+                                  <Badge className="bg-gradient-to-r from-amber-400 to-orange-500 text-white border-0 shadow-sm text-[10px] px-1.5 h-5">
+                                    <Sparkles size={10} className="mr-1" />
+                                    Match
+                                  </Badge>
+                                )}
+                              </CardTitle>
+                              {biz.location && (
+                                <CardDescription className="mt-1 text-xs">{biz.location} • {biz.industry}</CardDescription>
+                              )}
                             </div>
-                            <p className="text-xs text-slate-600 leading-relaxed">
-                              {biz.alertDescription}
-                            </p>
-                          </CardContent>
-                        </Card>
-                      ) : (
-                        <div className="grid grid-cols-2 gap-2 text-xs">
-                          <div className="bg-slate-50 p-2 rounded">
-                            <div className="text-slate-500">Revenue</div>
-                            <div className="font-semibold text-slate-900">{biz.revenue}</div>
+                            {biz.riskScore && (
+                              <div className="flex flex-col items-end">
+                                <Badge variant="outline" className={`font-mono ${
+                                  biz.riskScore > 85 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 
+                                  'bg-slate-50 text-slate-700'
+                                }`}>
+                                  {biz.riskScore}
+                                </Badge>
+                              </div>
+                            )}
                           </div>
-                          <div className="bg-slate-50 p-2 rounded">
-                            <div className="text-slate-500">Avg Ticket</div>
-                            <div className="font-semibold text-slate-900">{biz.avgTicket}</div>
+                        </CardHeader>
+                        <CardContent className="space-y-3 pb-4">
+                          {biz.id === 'taco-rico' && biz.alert ? (
+                            <div className="bg-red-50/50 border border-red-100 rounded-lg p-3">
+                              <div className="flex items-center gap-2 text-red-700 font-semibold text-xs mb-1">
+                                <TrendingUp size={14} /> {biz.alert}
+                              </div>
+                              <p className="text-xs text-slate-600 leading-relaxed">
+                                {biz.alertDescription}
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-2 gap-2 text-xs">
+                              <div className="bg-slate-50 p-2 rounded border border-slate-100">
+                                <div className="text-slate-500 text-[10px] uppercase tracking-wider font-medium">Rev/Mo</div>
+                                <div className="font-semibold text-slate-900">{biz.revenue}</div>
+                              </div>
+                              <div className="bg-slate-50 p-2 rounded border border-slate-100">
+                                <div className="text-slate-500 text-[10px] uppercase tracking-wider font-medium">Ticket</div>
+                                <div className="font-semibold text-slate-900">{biz.avgTicket}</div>
+                              </div>
+                            </div>
+                          )}
+                           <div className="flex gap-1.5 flex-wrap pt-1">
+                            {biz.integrations?.map((int) => (
+                              <Badge key={int} variant="secondary" className="text-[10px] px-1.5 h-5 bg-slate-100 text-slate-600 hover:bg-slate-200">
+                                {int}
+                              </Badge>
+                            ))}
                           </div>
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
+                        </CardContent>
+                      </Card>
                     ))}
                   </div>
                 </div>
 
-                {/* Detail View */}
-                {business && business.riskScore && (
-                  <div className="lg:col-span-8 h-full overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-slate-100">
-                  <Card className="h-full">
-                    <CardHeader>
-                      <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
-                        <div className="flex-1">
-                          <CardTitle className="text-xl flex items-center gap-2 flex-wrap">
-                            {business.name}
-                            {business.matchScore && business.matchScore >= 95 && (
-                              <Badge className="bg-gradient-to-r from-amber-400 to-orange-500 text-white border-0 shadow-md">
-                                <Sparkles size={14} className="mr-1" />
-                                Best Match
-                              </Badge>
-                            )}
-                          </CardTitle>
-                          <CardDescription className="mt-1 flex items-center gap-2 flex-wrap">
-                            <span>{business.location} • {business.industry}</span>
-                            <span className="text-slate-300">•</span>
-                            <span className="flex items-center gap-1">
-                              <span className="text-emerald-600 font-semibold">Score: {business.riskScore}</span>
-                              {business.matchScore && (
-                                <span className="text-amber-600 font-semibold">• Match: {business.matchScore}%</span>
-                              )}
-                            </span>
-                          </CardDescription>
-                        </div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <Badge className="bg-teal-100 text-teal-800 hover:bg-teal-100">
-                            {business.status || 'APPROVE'}
-                          </Badge>
-                          <span className="hidden sm:inline text-slate-300">|</span>
-                          <span className="text-sm font-medium text-slate-600">AI Confidence: 96%</span>
-                        </div>
+                {/* --- RIGHT SIDE: Chart & Action Panel --- */}
+                <div className="lg:col-span-8 h-full flex flex-col gap-4 overflow-hidden">
+                   {business && business.riskScore && (
+                    <>
+                      {/* Top: Chart Section (Approx 60% height) */}
+                      <div className="flex-[3] min-h-0 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden relative">
+                         <div className="absolute inset-0">
+                           <ChartAreaInteractive 
+                             businessId={business.id} 
+                             businessName={business.name} 
+                           />
+                         </div>
                       </div>
-                    </CardHeader>
 
-                    <CardContent className="space-y-6">
-                      {/* Chart */}
-                      <ChartAreaInteractive businessId={business.id} businessName={business.name} />
-
-                      {/* AI Risk Memo */}
-                      <Card className="bg-blue-50 border-blue-200">
-                        <CardContent className="pt-4">
-                          {!aiMemo ? (
-                            <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
-                              <div className="flex gap-3 items-start">
-                                <AlertCircle className="text-blue-600 mt-0.5 shrink-0" size={20} />
-                                <div>
-                                  <h4 className="font-bold text-blue-800 text-sm mb-2">Detection Logic (Sept 15)</h4>
-                                  <div className="text-sm text-blue-700 space-y-1">
-                                    <p>• Bank Balance: $30,000</p>
-                                    <p>• Obligations: $33,000 (Payroll/Supplier)</p>
-                                    <p>• Inventory: Wings @ 40%</p>
-                                    <p className="font-semibold">• Context: Sep 18 Game Day</p>
+                      {/* Bottom: Analysis & Action Panel (Approx 40% height) */}
+                      <Card className="flex-[2] min-h-0 flex flex-col shadow-sm border-slate-200 bg-white overflow-hidden">
+                        <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50/50 shrink-0">
+                          <div className="flex items-center gap-2">
+                             <div className="bg-teal-100 p-1 rounded-md text-teal-700">
+                               <FileText size={18} />
+                             </div>
+                             <div>
+                               <h3 className="font-semibold text-sm text-slate-900">AI Risk Analysis</h3>
+                               <p className="text-xs text-slate-500">Real-time assessment for underwriter review</p>
+                             </div>
+                          </div>
+                          <div className="flex gap-2">
+                             {!aiMemo ? (
+                               <Button 
+                                 size="sm" 
+                                 onClick={handleGenerateMemo}
+                                 disabled={isGenerating}
+                                 className="bg-teal-600 hover:bg-teal-700 text-white shadow-sm"
+                               >
+                                 {isGenerating ? (
+                                   <>
+                                     <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                                     Analyzing...
+                                   </>
+                                 ) : (
+                                   <>
+                                     <Sparkles className="mr-2 h-3 w-3" />
+                                     Generate Memo
+                                   </>
+                                 )}
+                               </Button>
+                             ) : (
+                               <>
+                                 {isApproved ? (
+                                   <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-md">
+                                     <CheckCircle className="h-4 w-4 text-emerald-600" />
+                                     <span className="text-sm font-medium text-emerald-700">Funding Approved</span>
+                                   </div>
+                                 ) : (
+                                   <>
+                                     <Button 
+                                       variant="outline" 
+                                       size="sm" 
+                                       className="text-red-600 hover:bg-red-50 border-red-200"
+                                       disabled={isApproving}
+                                     >
+                                       <ThumbsDown size={14} className="mr-1" /> Reject
+                                     </Button>
+                                     <Button 
+                                       size="sm" 
+                                       onClick={handleApproveFunding}
+                                       disabled={isApproving}
+                                       className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                                     >
+                                       {isApproving ? (
+                                         <>
+                                           <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                                           Processing...
+                                         </>
+                                       ) : (
+                                         <>
+                                           Approve Funding <ArrowRight size={14} className="ml-1" />
+                                         </>
+                                       )}
+                                     </Button>
+                                   </>
+                                 )}
+                               </>
+                             )}
+                          </div>
+                        </div>
+                        
+                        {/* Scrollable Content Area */}
+                        <ScrollArea className="flex-1 min-h-0">
+                          <div className="p-4">
+                            {!aiMemo ? (
+                              <div className="h-full flex flex-col items-center justify-center text-center space-y-4 opacity-70 min-h-[120px] px-4">
+                                <div className="bg-slate-100 p-3 rounded-full">
+                                  <Sparkles className="h-6 w-6 text-slate-400" />
+                                </div>
+                                <div className="max-w-sm space-y-2">
+                                  <p className="text-sm font-medium text-slate-900">No Assessment Generated</p>
+                                  <p className="text-xs text-slate-500 leading-relaxed">
+                                    Click <strong>"Generate Memo"</strong> above to run a live AI analysis on {business.name}'s transaction data, risk factors, and business metrics.
+                                  </p>
+                                  <div className="mt-4 pt-4 border-t border-slate-200 space-y-2 text-left">
+                                    <p className="text-xs font-semibold text-slate-700">What happens next:</p>
+                                    <ul className="text-xs text-slate-600 space-y-1.5 list-disc list-inside">
+                                      <li>AI analyzes real-time transaction patterns and risk indicators</li>
+                                      <li>Generates a comprehensive risk assessment memo</li>
+                                      <li>Provides funding recommendation with confidence score</li>
+                                      <li>Enables <strong className="text-emerald-600">Approve Funding</strong> button for loan processing</li>
+                                    </ul>
                                   </div>
                                 </div>
                               </div>
-                              <Button
-                                onClick={handleGenerateMemo}
-                                disabled={isGenerating}
-                                size="sm"
-                                variant="outline"
-                                className="bg-white hover:bg-blue-100 text-blue-700 border-blue-200 shrink-0"
-                              >
-                                {isGenerating ? (
-                                  <Loader size={14} className="animate-spin mr-2" />
-                                ) : (
-                                  <Sparkles size={14} className="mr-2" />
-                                )}
-                                Generate Risk Memo
-                              </Button>
-                            </div>
-                          ) : (
-                            <div className="space-y-2 animate-in fade-in duration-500">
-                              <div className="flex justify-between items-start">
-                                <div className="flex items-center gap-2 text-blue-800 font-bold text-sm">
-                                  <Sparkles size={16} className="text-blue-600" />
-                                  Azure AI Risk Assessment
+                            ) : (
+                              <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                                <div className="prose prose-sm prose-slate max-w-none">
+                                  <div className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
+                                    {aiMemo}
+                                  </div>
                                 </div>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => setAiMemo(null)}
-                                  className="text-blue-500 hover:text-blue-700 h-auto p-1"
-                                >
-                                  Reset
-                                </Button>
+                                <Separator />
+                                <div className="flex items-center justify-between pt-2 pb-2">
+                                  <p className="text-xs text-slate-500">Confidence Score: <span className="text-emerald-600 font-bold">94%</span></p>
+                                </div>
                               </div>
-                              <div className="text-sm text-blue-900 bg-white/50 p-3 rounded border border-blue-100 whitespace-pre-line leading-relaxed font-medium">
-                                {aiMemo}
-                              </div>
-                            </div>
-                          )}
-                        </CardContent>
+                            )}
+                          </div>
+                        </ScrollArea>
                       </Card>
-                    </CardContent>
-                  </Card>
+                    </>
+                  )}
                 </div>
-              )}
             </div>
           </div>
         </div>
@@ -462,4 +516,3 @@ export default function DashboardPage() {
     </ProtectedRoute>
   );
 }
-

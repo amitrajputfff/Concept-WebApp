@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ProtectedRoute, useAuth } from '@/lib/auth-context';
 import { AppSidebar } from '@/components/app-sidebar';
 import { SiteHeader } from '@/components/site-header';
@@ -47,8 +47,8 @@ function AccountContent() {
   const [showApiKey, setShowApiKey] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Profile state
-  const [profile, setProfile] = useState({
+  // Default values
+  const defaultProfile = {
     fullName: 'Jane Doe',
     email: 'jane.doe@propelcapital.com',
     phone: '+1 (555) 123-4567',
@@ -56,44 +56,94 @@ function AccountContent() {
     department: 'Underwriting',
     location: 'New York, NY',
     bio: 'Experienced lending professional specializing in AI-driven credit assessment and merchant financing.',
-  });
+  };
 
-  // Notification preferences
-  const [notifications, setNotifications] = useState({
+  const defaultNotifications = {
     emailAlerts: true,
     pushNotifications: true,
     weeklyReports: true,
     merchantUpdates: true,
     riskAlerts: true,
     systemUpdates: false,
-  });
+  };
 
-  // Security settings
-  const [security, setSecurity] = useState({
+  const defaultSecurity = {
     twoFactorEnabled: true,
     sessionTimeout: '30',
     loginAlerts: true,
-  });
+  };
+
+  // Load from localStorage on mount
+  useEffect(() => {
+    const savedProfile = localStorage.getItem('propel_account_profile');
+    const savedNotifications = localStorage.getItem('propel_account_notifications');
+    const savedSecurity = localStorage.getItem('propel_account_security');
+
+    if (savedProfile) {
+      setProfile(JSON.parse(savedProfile));
+    }
+    if (savedNotifications) {
+      setNotifications(JSON.parse(savedNotifications));
+    }
+    if (savedSecurity) {
+      setSecurity(JSON.parse(savedSecurity));
+    }
+  }, []);
+
+  // Profile state
+  const [profile, setProfile] = useState(defaultProfile);
+
+  // Notification preferences
+  const [notifications, setNotifications] = useState(defaultNotifications);
+
+  // Security settings
+  const [security, setSecurity] = useState(defaultSecurity);
 
   const handleSaveProfile = async () => {
     setIsSaving(true);
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    toast.success('Profile updated successfully!');
-    setIsSaving(false);
+    try {
+      // Save to localStorage
+      localStorage.setItem('propel_account_profile', JSON.stringify(profile));
+      // Dispatch custom event to update sidebar
+      window.dispatchEvent(new Event('propel_profile_updated'));
+      await new Promise(resolve => setTimeout(resolve, 800));
+      toast.success('Profile updated successfully!');
+    } catch (error) {
+      toast.error('Failed to save profile');
+      console.error(error);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleSaveNotifications = async () => {
     setIsSaving(true);
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    toast.success('Notification preferences saved!');
-    setIsSaving(false);
+    try {
+      // Save to localStorage
+      localStorage.setItem('propel_account_notifications', JSON.stringify(notifications));
+      await new Promise(resolve => setTimeout(resolve, 800));
+      toast.success('Notification preferences saved!');
+    } catch (error) {
+      toast.error('Failed to save notifications');
+      console.error(error);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleSaveSecurity = async () => {
     setIsSaving(true);
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    toast.success('Security settings updated!');
-    setIsSaving(false);
+    try {
+      // Save to localStorage
+      localStorage.setItem('propel_account_security', JSON.stringify(security));
+      await new Promise(resolve => setTimeout(resolve, 800));
+      toast.success('Security settings updated!');
+    } catch (error) {
+      toast.error('Failed to save security settings');
+      console.error(error);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -149,7 +199,9 @@ function AccountContent() {
                   <div className="flex items-center gap-6">
                     <Avatar className="h-24 w-24">
                       <AvatarFallback className="bg-gradient-to-br from-teal-500 to-emerald-600 text-white text-2xl font-bold">
-                        JD
+                        {profile.fullName.split(' ').length > 1 
+                          ? `${profile.fullName.split(' ')[0][0]}${profile.fullName.split(' ')[profile.fullName.split(' ').length - 1][0]}`.toUpperCase()
+                          : profile.fullName.substring(0, 2).toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
                     <div className="flex-1">
