@@ -96,7 +96,7 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-teal-50 via-white to-emerald-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-5xl">
+      <div className="w-full max-w-xl">
         {/* Header */}
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-3 mb-4">
@@ -270,7 +270,7 @@ export default function LoginPage() {
             Demo platform • Use credentials above to sign in
           </p>
           <p className="text-xs text-slate-400">
-            Powered by Azure OpenAI • Built with Next.js & shadcn/ui
+            Powered by LiaPlus AI • Propel Capital
           </p>
         </div>
       </div>

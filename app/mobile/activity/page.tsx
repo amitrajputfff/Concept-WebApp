@@ -34,7 +34,7 @@ function ActivityContent() {
         <div className="hidden sm:block absolute top-0 left-1/2 -translate-x-1/2 w-32 h-7 bg-black rounded-b-2xl z-20"></div>
 
         {/* Screen Content */}
-        <div className="w-full h-full bg-slate-50 sm:rounded-[2rem] overflow-hidden relative">
+        <div className="w-full h-full bg-slate-50 sm:rounded-[2rem] overflow-hidden relative flex flex-col min-h-0 sm:pt-10">
           {/* Header */}
           <div className="bg-white border-b sticky top-0 z-10">
         <div className="p-4 flex items-center gap-3">
@@ -49,7 +49,7 @@ function ActivityContent() {
       </div>
 
       {/* Content */}
-      <div className="p-3 sm:p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-4">
         {/* Balance Card */}
         <Card className="bg-gradient-to-br from-teal-600 to-emerald-600 text-white border-0">
           <CardContent className="pt-6">

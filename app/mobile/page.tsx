@@ -9,6 +9,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import {
   Menu,
   Bell,
@@ -21,6 +22,8 @@ import {
   Smartphone,
   Activity,
   Zap,
+  User,
+  LogOut,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -100,6 +103,7 @@ function MobileContent() {
   const [isTyping, setIsTyping] = useState(false);
   const [showTransferSuccess, setShowTransferSuccess] = useState(false);
   const [isExplaining, setIsExplaining] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { user, logout } = useAuth();
   const router = useRouter();
@@ -183,7 +187,7 @@ function MobileContent() {
         <div className="hidden sm:block absolute top-0 left-1/2 -translate-x-1/2 w-32 h-7 bg-black rounded-b-2xl z-20"></div>
 
         {/* Screen Content */}
-        <div className="w-full h-full bg-white sm:rounded-[2rem] overflow-hidden relative">
+        <div className="w-full h-full bg-white sm:rounded-[2rem] overflow-hidden relative sm:pt-10">
           {activeScreen === 'home' ? (
             <div className="h-full bg-slate-50 flex flex-col">
               {/* Header */}
@@ -193,7 +197,7 @@ function MobileContent() {
                     variant="ghost" 
                     size="icon" 
                     className="text-white hover:bg-teal-700"
-                    onClick={logout}
+                    onClick={() => setMenuOpen(true)}
                   >
                     <Menu size={24} />
                   </Button>
@@ -286,7 +290,7 @@ function MobileContent() {
               </div>
             </div>
           ) : (
-            <div className="h-full bg-slate-50 flex flex-col">
+            <div className="h-full bg-slate-50 flex flex-col min-h-0">
               {/* Chat Header */}
               <div className="bg-white p-4 border-b border-slate-200 flex items-center gap-3 shadow-sm z-10">
                 <Button
@@ -309,7 +313,7 @@ function MobileContent() {
               </div>
 
               {/* Chat Area */}
-              <ScrollArea className="flex-1 p-4">
+              <ScrollArea className="flex-1 min-h-0 p-4 bg-slate-50">
                 <div className="space-y-4">
                   <div className="text-center text-xs text-slate-400 my-4">Wed, Sep 15 • 9:15 AM</div>
 
@@ -411,6 +415,76 @@ function MobileContent() {
           )}
         </div>
       </div>
+
+      {/* Mobile Menu Sheet */}
+      <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
+        <SheetContent side="left" className="w-[280px] p-0">
+          <SheetHeader className="p-6 border-b bg-teal-600 text-white">
+            <SheetTitle className="text-white">Menu</SheetTitle>
+          </SheetHeader>
+          <div className="flex flex-col h-full">
+            <div className="flex-1 p-4 space-y-2">
+              <Button
+                variant="ghost"
+                className="w-full justify-start gap-3 h-12"
+                onClick={() => {
+                  router.push('/mobile');
+                  setMenuOpen(false);
+                }}
+              >
+                <Smartphone size={20} />
+                <span>Home</span>
+              </Button>
+              <Button
+                variant="ghost"
+                className="w-full justify-start gap-3 h-12"
+                onClick={() => {
+                  router.push('/mobile/activity');
+                  setMenuOpen(false);
+                }}
+              >
+                <Activity size={20} />
+                <span>Activity</span>
+              </Button>
+              <Button
+                variant="ghost"
+                className="w-full justify-start gap-3 h-12"
+                onClick={() => {
+                  router.push('/mobile/growth');
+                  setMenuOpen(false);
+                }}
+              >
+                <Zap size={20} />
+                <span>Growth</span>
+              </Button>
+              <Button
+                variant="ghost"
+                className="w-full justify-start gap-3 h-12"
+                onClick={() => {
+                  router.push('/dashboard/account');
+                  setMenuOpen(false);
+                }}
+              >
+                <User size={20} />
+                <span>Account</span>
+              </Button>
+            </div>
+            <div className="p-4 border-t">
+              <Button
+                variant="ghost"
+                className="w-full justify-start gap-3 h-12 text-red-600 hover:text-red-700 hover:bg-red-50"
+                onClick={() => {
+                  setMenuOpen(false);
+                  logout();
+                }}
+              >
+                <LogOut size={20} />
+                <span>Logout</span>
+              </Button>
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       {/* Desktop controls - Hidden on mobile */}
       <div className="hidden md:flex absolute top-4 right-4 gap-2">
