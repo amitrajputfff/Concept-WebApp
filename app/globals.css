@@ -143,3 +143,80 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Call Animation Styles */
+@keyframes call-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 0.8;
+  }
+}
+
+@keyframes ripple {
+  0% {
+    transform: scale(0.8);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(2.5);
+    opacity: 0;
+  }
+}
+
+.call-ripple {
+  animation: ripple 2s ease-out infinite;
+}
+
+.call-ripple-delay-1 {
+  animation: ripple 2s ease-out infinite;
+  animation-delay: 0.5s;
+}
+
+.call-ripple-delay-2 {
+  animation: ripple 2s ease-out infinite;
+  animation-delay: 1s;
+}
+
+/* Minimal wavy background animation */
+@keyframes drift {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(10px, -12px, 0) rotate(1deg);
+  }
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes wave {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(-6px, -8px, 0) scale(1.02);
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@layer utilities {
+  .animate-drift {
+    animation: drift 12s ease-in-out infinite;
+  }
+  .animate-drift-slow {
+    animation: drift 16s ease-in-out infinite;
+  }
+  .animate-drift-slower {
+    animation: drift 22s ease-in-out infinite;
+  }
+  .animate-wave {
+    animation: wave 14s ease-in-out infinite;
+  }
+}

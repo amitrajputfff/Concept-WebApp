@@ -26,9 +26,12 @@ import {
   FileText,
   ThumbsUp,
   ThumbsDown,
-  ArrowRight
+  ArrowRight,
+  Phone,
+  X
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { WavyBackground } from '@/components/ui/wavy-background';
 
 // --- MOCK DATA ---
 const mockBusinesses = [
@@ -177,6 +180,7 @@ function DashboardContent() {
   const [showContext, setShowContext] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
   const [isApproved, setIsApproved] = useState(false);
+  const [showCallPopup, setShowCallPopup] = useState(false);
 
   const handleGenerateMemo = async () => {
     setIsGenerating(true);
@@ -233,6 +237,7 @@ function DashboardContent() {
       await new Promise(resolve => setTimeout(resolve, 1500));
       
       setIsApproved(true);
+      setShowCallPopup(true); // Show call popup after approval
       toast.success(`Funding approved for ${currentBusiness?.name}!`, {
         description: 'Loan documents have been sent for signature.',
         duration: 5000,
@@ -258,6 +263,48 @@ function DashboardContent() {
       <AppSidebar />
       <SidebarInset className="flex flex-col h-screen overflow-hidden">
         <ContextModal isOpen={showContext} onClose={() => setShowContext(false)} />
+        
+        {/* Call Popup Modal */}
+        <Dialog open={showCallPopup} onOpenChange={setShowCallPopup}>
+          <DialogContent className="sm:max-w-sm !p-0 overflow-hidden border-0 rounded-3xl shadow-2xl" showCloseButton={false}>
+            <WavyBackground className="relative [&>div:last-child]:!py-10 [&>div:last-child]:!px-6">
+              {/* Close button */}
+              <button
+                onClick={() => setShowCallPopup(false)}
+                className="absolute top-3 right-3 z-20 p-1.5 rounded-full bg-white/5 hover:bg-white/10 transition-colors"
+                aria-label="Close"
+              >
+                <X className="h-3.5 w-3.5 text-white/80" />
+              </button>
+              
+              {/* Call Content */}
+              <div className="flex flex-col items-center justify-center rounded-full space-y-6">
+                {/* Minimal Phone Icon */}
+                <div className="relative">
+                  <div className="relative z-10 bg-white/5 backdrop-blur-sm rounded-full p-4 border border-white/10">
+                    <Phone className="h-8 w-8 text-white/90" />
+                  </div>
+                </div>
+                
+                {/* Text Content */}
+                <div className="text-center space-y-2">
+                  <p className="text-sm font-medium text-white/60 tracking-wide uppercase">
+                    Lia is calling
+                  </p>
+                  <h3 className="text-2xl font-semibold text-white">
+                    {business?.name || 'Company'}
+                  </h3>
+                </div>
+                
+                {/* Minimal status indicator */}
+                <div className="flex items-center gap-1.5 mt-2">
+                  <div className="w-1 h-1 bg-white/50 rounded-full"></div>
+                  <span className="text-xs text-white/50 font-light">Connecting</span>
+                </div>
+              </div>
+            </WavyBackground>
+          </DialogContent>
+        </Dialog>
         
         {/* Header - Fixed at top */}
         <div className="sticky top-0 z-10 shrink-0 bg-background border-b">
