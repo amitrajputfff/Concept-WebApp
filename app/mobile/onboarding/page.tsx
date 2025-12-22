@@ -154,7 +154,7 @@ const providerOptions: Record<Category, ProviderOption[]> = {
     {
       value: 'quickbooks',
       label: 'QuickBooks',
-      logo: 'https://logo.clearbit.com/quickbooks.intuit.com',
+      logo: '/quickbook.png',
       description: 'Core ledger + cashflow',
       fields: [
         { label: 'QuickBooks Company ID', placeholder: 'qb-company-8831', type: 'text' },
@@ -166,7 +166,7 @@ const providerOptions: Record<Category, ProviderOption[]> = {
     {
       value: 'xero',
       label: 'Xero',
-      logo: 'https://logo.clearbit.com/xero.com',
+      logo: '/xero.png',
       description: 'Cloud-first accounting',
       fields: [
         { label: 'Xero Organisation ID', placeholder: 'xero-org-4411', type: 'text' },
@@ -178,7 +178,7 @@ const providerOptions: Record<Category, ProviderOption[]> = {
     {
       value: 'freshbooks',
       label: 'FreshBooks',
-      logo: 'https://logo.clearbit.com/freshbooks.com',
+      logo: '/freshbooks.png',
       description: 'Invoices and expenses',
       fields: [
         { label: 'FreshBooks Firm ID', placeholder: 'freshbooks-firm-1022', type: 'text' },
@@ -190,7 +190,7 @@ const providerOptions: Record<Category, ProviderOption[]> = {
     {
       value: 'zoho',
       label: 'ZOHO',
-      logo: 'https://logo.clearbit.com/zoho.com',
+      logo: '/zoho.png',
       description: 'ZOHO Books suite',
       fields: [
         { label: 'ZOHO Books Org ID', placeholder: 'zoho-org-3301', type: 'text' },
@@ -204,7 +204,7 @@ const providerOptions: Record<Category, ProviderOption[]> = {
     {
       value: 'fico',
       label: 'FICO',
-      logo: 'https://logo.clearbit.com/fico.com',
+      logo: '/fico.png',
       description: 'SBSS & risk signals',
       fields: [
         { label: 'FICO SBSS ID', placeholder: 'sbss-9012', type: 'text' },
@@ -216,7 +216,7 @@ const providerOptions: Record<Category, ProviderOption[]> = {
     {
       value: 'dnb',
       label: 'Dun & Bradstreet',
-      logo: 'https://logo.clearbit.com/dnb.com',
+      logo: '/dun and bradstreet.png',
       description: 'Trade lines & PAYDEX',
       fields: [
         { label: 'DUNS Number', placeholder: '08-123-4567', type: 'text' },
@@ -228,7 +228,7 @@ const providerOptions: Record<Category, ProviderOption[]> = {
     {
       value: 'experian',
       label: 'Experian',
-      logo: 'https://logo.clearbit.com/experian.com',
+      logo: '/experian.png',
       description: 'Business bureau data',
       fields: [
         { label: 'Experian BIN / Member ID', placeholder: 'exp-merchant-778', type: 'text' },
@@ -240,7 +240,7 @@ const providerOptions: Record<Category, ProviderOption[]> = {
     {
       value: 'equifax',
       label: 'Equifax',
-      logo: 'https://logo.clearbit.com/equifax.com',
+      logo: '/equifax.png',
       description: 'Credit + fraud checks',
       fields: [
         { label: 'Equifax Merchant ID', placeholder: 'eqfx-merchant-310', type: 'text' },
