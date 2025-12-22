@@ -73,7 +73,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // Redirect based on role and onboarding status
     if (!onboardingComplete) {
-      router.push(`/onboarding/${role}`);
+      if (role === 'merchant') {
+        // Redirect merchants to mobile onboarding
+        router.push('/mobile/onboarding');
+      } else {
+        router.push(`/onboarding/${role}`);
+      }
     } else {
       if (role === 'lender') {
         router.push('/dashboard');

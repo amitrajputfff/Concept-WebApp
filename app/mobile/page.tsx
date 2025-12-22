@@ -189,7 +189,7 @@ function MobileContent() {
         {/* Screen Content */}
         <div className="w-full h-full bg-white sm:rounded-[2rem] overflow-hidden relative sm:pt-10">
           {activeScreen === 'home' ? (
-            <div className="h-full bg-slate-50 flex flex-col">
+            <div className="h-full bg-slate-50 flex flex-col min-h-0">
               {/* Header */}
               <div className="bg-teal-600 p-6 pb-12 rounded-b-[2.5rem] shadow-lg">
                 <div className="flex justify-between items-center text-white mb-6">
@@ -214,7 +214,7 @@ function MobileContent() {
               </div>
 
               {/* Main Content */}
-              <div className="px-6 -mt-8 flex-1">
+              <div className="px-6 -mt-8 flex-1 overflow-y-auto pb-20 space-y-6">
                 {/* Notification Card */}
                 <Card
                   onClick={() => setActiveScreen('chat')}
@@ -286,6 +286,13 @@ function MobileContent() {
                 >
                   <Zap size={24} />
                   <span className="text-[10px] font-medium">Growth</span>
+                </button>
+                <button 
+                  onClick={() => router.push('/mobile/account')}
+                  className="flex flex-col items-center gap-1 hover:text-teal-600 transition-colors"
+                >
+                  <User size={24} />
+                  <span className="text-[10px] font-medium">Account</span>
                 </button>
               </div>
             </div>
@@ -461,7 +468,7 @@ function MobileContent() {
                 variant="ghost"
                 className="w-full justify-start gap-3 h-12"
                 onClick={() => {
-                  router.push('/dashboard/account');
+                  router.push('/mobile/account');
                   setMenuOpen(false);
                 }}
               >
@@ -516,4 +523,3 @@ export default function MobilePage() {
     </ProtectedRoute>
   );
 }
-

@@ -40,7 +40,7 @@ export default function LoginPage() {
       if (user.role === 'lender') {
         router.push('/dashboard');
       } else if (user.role === 'merchant') {
-        router.push('/mobile');
+        router.push('/mobile/onboarding');
       }
     }
   }, [user, router]);
