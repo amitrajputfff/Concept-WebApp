@@ -19,6 +19,7 @@ NC='\033[0m' # No Color
 # Configuration
 DOMAIN="${DOMAIN:-propel.liaplus.com}"
 EMAIL="${EMAIL:-}"
+USE_STAGING="${USE_STAGING:-false}"
 
 # Print colored messages
 print_info() {
@@ -143,18 +144,21 @@ setup_ssl() {
     
     # Request certificate using standalone method
     print_info "Requesting SSL certificate for ${DOMAIN}..."
+    
+    # Build certbot command
+    CERTBOT_CMD="certbot certonly --standalone --preferred-challenges http -d ${DOMAIN} --email ${EMAIL} --agree-tos --no-eff-email --non-interactive"
+    
+    # Add staging flag if requested
+    if [ "$USE_STAGING" = "true" ]; then
+        CERTBOT_CMD="$CERTBOT_CMD --staging"
+        print_warning "Using Let's Encrypt STAGING environment (for testing)"
+    fi
+    
     if docker run --rm \
         -v /etc/letsencrypt:/etc/letsencrypt \
         -v ./nginx/certbot:/var/www/certbot \
         -p 80:80 \
-        certbot/certbot certonly \
-        --standalone \
-        --preferred-challenges http \
-        -d "${DOMAIN}" \
-        --email "${EMAIL}" \
-        --agree-tos \
-        --no-eff-email \
-        --non-interactive; then
+        certbot/certbot $CERTBOT_CMD; then
         print_success "SSL certificate obtained for ${DOMAIN}"
         # Restart nginx after certificate is obtained
         print_info "Starting nginx with SSL certificate..."
@@ -171,29 +175,40 @@ setup_ssl() {
         sleep 5
         
         # Try webroot method
+        WEBROOT_CMD="certbot certonly --webroot --webroot-path=/var/www/certbot --email ${EMAIL} --agree-tos --no-eff-email --non-interactive -d ${DOMAIN}"
+        
+        if [ "$USE_STAGING" = "true" ]; then
+            WEBROOT_CMD="$WEBROOT_CMD --staging"
+        fi
+        
         if docker run --rm \
             -v /etc/letsencrypt:/etc/letsencrypt \
             -v ./nginx/certbot:/var/www/certbot \
             --network concept-webapp_app-network \
-            certbot/certbot certonly \
-            --webroot \
-            --webroot-path=/var/www/certbot \
-            --email "${EMAIL}" \
-            --agree-tos \
-            --no-eff-email \
-            --non-interactive \
-            -d "${DOMAIN}"; then
+            certbot/certbot $WEBROOT_CMD; then
             print_success "SSL certificate obtained for ${DOMAIN}"
             print_info "Reloading nginx..."
             docker compose exec nginx nginx -s reload
             return 0
         else
-            print_error "SSL certificate setup failed. Common issues:"
-            print_info "  1. Domain ${DOMAIN} must point to this server's IP"
-            print_info "  2. Port 80 must be accessible from the internet"
-            print_info "  3. Check DNS: dig ${DOMAIN} or nslookup ${DOMAIN}"
-            print_info "  4. Check firewall: sudo ufw status (if using UFW)"
-            print_info "  5. Make sure system nginx is stopped: sudo systemctl stop nginx"
+            print_error "SSL certificate setup failed."
+            echo ""
+            if echo "$(docker run --rm -v /etc/letsencrypt:/etc/letsencrypt certbot/certbot certificates 2>&1)" | grep -q "rate limit"; then
+                print_warning "You've hit Let's Encrypt rate limits!"
+                print_info "Rate limit: Too many failed attempts in the last hour"
+                print_info "Solutions:"
+                print_info "  1. Wait 1 hour before trying again"
+                print_info "  2. Test with staging first: USE_STAGING=true ./setup-ssl.sh"
+                print_info "  3. Check if DNS and firewall are properly configured"
+            else
+                print_error "Common issues:"
+                print_info "  1. Domain ${DOMAIN} must point to this server's IP"
+                print_info "  2. Port 80 must be accessible from the internet"
+                print_info "  3. Check DNS: dig ${DOMAIN} or nslookup ${DOMAIN}"
+                print_info "  4. Check firewall: sudo ufw status (if using UFW)"
+                print_info "  5. Check AWS Security Group allows port 80 from 0.0.0.0/0"
+                print_info "  6. Make sure system nginx is stopped: sudo systemctl stop nginx"
+            fi
             exit 1
         fi
     fi
@@ -218,17 +233,25 @@ main() {
                 EMAIL="$2"
                 shift 2
                 ;;
+            --staging)
+                USE_STAGING="true"
+                shift
+                ;;
             --help)
                 echo "Usage: ./setup-ssl.sh [OPTIONS]"
                 echo ""
                 echo "Options:"
                 echo "  --domain DOMAIN    Set the domain name (default: propel.liaplus.com)"
                 echo "  --email EMAIL      Set email for SSL certificate"
+                echo "  --staging          Use Let's Encrypt staging environment (for testing)"
                 echo "  --help             Show this help message"
                 echo ""
                 echo "Environment variables:"
                 echo "  DOMAIN             Domain name"
                 echo "  EMAIL              Email for SSL"
+                echo "  USE_STAGING        Use staging environment (true/false)"
+                echo ""
+                echo "Note: If you hit rate limits, wait 1 hour or use --staging to test first"
                 echo ""
                 exit 0
                 ;;
