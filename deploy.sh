@@ -158,37 +158,69 @@ setup_ssl() {
             return 0
         fi
         
-        # Start nginx first to serve ACME challenges
-        print_info "Starting nginx for ACME challenge..."
-        docker compose up -d nginx 2>/dev/null || true
-        sleep 5
+        print_info "Before obtaining SSL certificate, please ensure:"
+        print_info "  1. Domain ${DOMAIN} points to this server's IP address"
+        print_info "  2. Ports 80 and 443 are open in firewall"
+        print_info "  3. No other service is using ports 80/443"
+        read -p "Continue with SSL setup? (y/n) " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            print_warning "Skipping SSL setup. You can set it up later."
+            SSL_ENABLED="false"
+            return 0
+        fi
         
-        # Request certificate using webroot method (nginx must be running)
+        # First, try standalone method (simpler, doesn't require nginx running)
+        print_info "Attempting to obtain SSL certificate using standalone method..."
+        print_info "This will temporarily use port 80, so nginx must be stopped..."
+        
+        # Stop nginx for standalone certbot
+        docker compose stop nginx 2>/dev/null || true
+        sleep 2
+        
+        # Request certificate using standalone method
         print_info "Requesting SSL certificate for ${DOMAIN}..."
-        docker compose run --rm certbot certonly \
-            --webroot \
-            --webroot-path=/var/www/certbot \
+        if docker compose run --rm certbot certonly \
+            --standalone \
+            --preferred-challenges http \
+            -d "${DOMAIN}" \
             --email "${EMAIL}" \
             --agree-tos \
             --no-eff-email \
-            --non-interactive \
-            -d "${DOMAIN}" || {
-            print_warning "SSL certificate setup failed. Trying standalone method..."
+            --non-interactive; then
+            print_success "SSL certificate obtained for ${DOMAIN}"
+            print_info "Certificate will auto-renew via certbot container"
+            # Restart nginx after certificate is obtained
+            docker compose up -d nginx
+            return 0
+        else
+            print_warning "Standalone method failed. Trying webroot method..."
             
-            # Fallback to standalone method
-            docker compose stop nginx 2>/dev/null || true
-            docker compose run --rm certbot certonly \
-                --standalone \
-                --preferred-challenges http \
-                -d "${DOMAIN}" \
+            # Start nginx for webroot method
+            docker compose up -d nginx
+            sleep 5
+            
+            # Try webroot method
+            if docker compose run --rm certbot certonly \
+                --webroot \
+                --webroot-path=/var/www/certbot \
                 --email "${EMAIL}" \
                 --agree-tos \
                 --no-eff-email \
-                --non-interactive || {
-                print_error "SSL certificate setup failed. Please check:"
-                print_info "  1. Domain ${DOMAIN} points to this server"
-                print_info "  2. Ports 80 and 443 are accessible"
-                print_info "  3. Firewall allows HTTP/HTTPS traffic"
+                --non-interactive \
+                -d "${DOMAIN}"; then
+                print_success "SSL certificate obtained for ${DOMAIN}"
+                print_info "Certificate will auto-renew via certbot container"
+                return 0
+            else
+                print_error "SSL certificate setup failed. Common issues:"
+                print_info "  1. Domain ${DOMAIN} must point to this server's IP"
+                print_info "  2. Port 80 must be accessible from the internet"
+                print_info "  3. Check DNS: dig ${DOMAIN} or nslookup ${DOMAIN}"
+                print_info "  4. Check firewall: sudo ufw status (if using UFW)"
+                print_info ""
+                print_info "You can set up SSL later by running:"
+                print_info "  SSL_ENABLED=true EMAIL=${EMAIL} ./deploy.sh"
                 read -p "Continue without SSL? (y/n) " -n 1 -r
                 echo
                 if [[ ! $REPLY =~ ^[Yy]$ ]]; then
@@ -196,12 +228,7 @@ setup_ssl() {
                 fi
                 SSL_ENABLED="false"
                 return 1
-            }
-        }
-        
-        if [ "$SSL_ENABLED" = "true" ]; then
-            print_success "SSL certificate obtained for ${DOMAIN}"
-            print_info "Certificate will auto-renew via certbot container"
+            fi
         fi
     else
         print_info "SSL setup skipped. Set SSL_ENABLED=true to enable SSL."
