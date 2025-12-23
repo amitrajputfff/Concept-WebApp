@@ -95,6 +95,36 @@ setup_ssl() {
     print_info "  2. Ports 80 and 443 are open in firewall"
     print_info "  3. No other service is using ports 80/443"
     print_info "  4. Docker containers are running (nginx and app)"
+    echo ""
+    
+    # Check DNS
+    print_info "Checking DNS configuration..."
+    SERVER_IP=$(curl -s ifconfig.me || curl -s icanhazip.com || echo "unknown")
+    DOMAIN_IP=$(dig +short ${DOMAIN} | tail -n1 || echo "unknown")
+    
+    print_info "Server IP: ${SERVER_IP}"
+    print_info "Domain ${DOMAIN} resolves to: ${DOMAIN_IP}"
+    
+    if [ "$DOMAIN_IP" != "unknown" ] && [ "$SERVER_IP" != "unknown" ] && [ "$DOMAIN_IP" != "$SERVER_IP" ]; then
+        print_warning "DNS mismatch! Domain points to ${DOMAIN_IP} but server IP is ${SERVER_IP}"
+        print_warning "Please update DNS records for ${DOMAIN} to point to ${SERVER_IP}"
+        read -p "Continue anyway? (y/n) " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            exit 1
+        fi
+    fi
+    
+    # Check if port 80 is accessible
+    print_info "Checking if port 80 is accessible..."
+    if command_exists nc; then
+        if nc -z localhost 80 2>/dev/null; then
+            print_success "Port 80 is open locally"
+        else
+            print_warning "Port 80 may not be accessible"
+        fi
+    fi
+    
     read -p "Continue with SSL setup? (y/n) " -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
