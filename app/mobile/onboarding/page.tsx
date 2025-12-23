@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
-import { ChevronLeft, ChevronRight, CheckCircle, Building2, MapPin, Users, DollarSign } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CheckCircle, Building2, MapPin, Users, DollarSign, Settings, Sparkles, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 // Logo component with fallback
@@ -285,6 +285,8 @@ function MobileOnboardingContent() {
     identity: { provider: '', fields: {} },
   });
   const [selectedProvider, setSelectedProvider] = useState<{ category: Category; provider: string } | null>(null);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [verificationComplete, setVerificationComplete] = useState(false);
 
   const progress = ((step + 1) / steps.length) * 100;
 
@@ -371,8 +373,41 @@ function MobileOnboardingContent() {
       return;
     }
 
-    setSelectedProvider(null);
-    toast.success(`${provider.label} connected successfully!`);
+    // Start verification process
+    setIsVerifying(true);
+    setVerificationComplete(false);
+
+    // Simulate verification process
+    setTimeout(() => {
+      setVerificationComplete(true);
+      setTimeout(() => {
+        setIsVerifying(false);
+        setVerificationComplete(false);
+        setSelectedProvider(null);
+        toast.success(`${provider.label} connected successfully!`);
+      }, 1500);
+    }, 2500);
+  };
+
+  const handleFillDemoCredentials = () => {
+    if (!selectedProvider) return;
+    const provider = providerOptions[selectedProvider.category].find((p) => p.value === selectedProvider.provider);
+    if (!provider) return;
+
+    const demoFields: Record<string, string> = {};
+    provider.fields.forEach((field) => {
+      demoFields[field.label] = field.placeholder;
+    });
+
+    setConnections((prev) => ({
+      ...prev,
+      [selectedProvider.category]: {
+        ...prev[selectedProvider.category],
+        fields: demoFields,
+      },
+    }));
+
+    toast.success('Demo credentials filled!');
   };
 
   const selectedOption = (category: Category) =>
@@ -568,10 +603,28 @@ function MobileOnboardingContent() {
                 </Select>
 
                 {selected && connections[category]?.provider && (
-                  <div className="pt-2 border-t border-slate-100">
-                    <Badge variant="outline" className="text-xs">
-                      {Object.keys(connections[category].fields).length} of {selected.fields.length} fields filled
-                    </Badge>
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      {Object.keys(connections[category].fields).length === selected.fields.length ? (
+                        <Badge variant="outline" className="text-xs bg-emerald-50 text-emerald-700 border-emerald-200">
+                          <CheckCircle className="w-3 h-3 mr-1" />
+                          Verified
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-xs">
+                          {Object.keys(connections[category].fields).length} of {selected.fields.length} fields filled
+                        </Badge>
+                      )}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleConnectionChange(category, connections[category].provider)}
+                      className="text-xs"
+                    >
+                      <Settings className="w-3 h-3 mr-1" />
+                      Configure
+                    </Button>
                   </div>
                 )}
               </CardContent>
@@ -604,29 +657,40 @@ function MobileOnboardingContent() {
         </div>
 
         <div className="space-y-4">
-          {provider.fields.map((field, index) => (
-            <div key={index} className="space-y-2">
-              <Label htmlFor={`${selectedProvider.category}-${selectedProvider.provider}-${index}`} className="text-slate-700">
-                {field.label}
-              </Label>
-              <Input
-                id={`${selectedProvider.category}-${selectedProvider.provider}-${index}`}
-                type={field.type || 'text'}
-                value={connections[selectedProvider.category]?.fields[field.label] || ''}
-                onChange={(e) => handleProviderFieldChange(selectedProvider.category, field.label, e.target.value)}
-                placeholder={field.placeholder}
-              />
-            </div>
-          ))}
+          {provider.fields.map((field, index) => {
+            const fieldValue = connections[selectedProvider.category]?.fields[field.label] || '';
+            const isFilled = fieldValue.trim() !== '';
+            return (
+              <div key={index} className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor={`${selectedProvider.category}-${selectedProvider.provider}-${index}`} className="text-slate-700">
+                    {field.label}
+                  </Label>
+                  {isFilled && (
+                    <CheckCircle className="w-4 h-4 text-emerald-600" />
+                  )}
+                </div>
+                <Input
+                  id={`${selectedProvider.category}-${selectedProvider.provider}-${index}`}
+                  type={field.type || 'text'}
+                  value={fieldValue}
+                  onChange={(e) => handleProviderFieldChange(selectedProvider.category, field.label, e.target.value)}
+                  placeholder={field.placeholder}
+                  className={isFilled ? 'border-emerald-200 bg-emerald-50/50' : ''}
+                />
+              </div>
+            );
+          })}
         </div>
 
-        <Card className="bg-slate-50 border-slate-200">
-          <CardContent className="pt-4">
-            <p className="text-xs text-slate-500">
-              Demo only - mock data for testing purposes
-            </p>
-          </CardContent>
-        </Card>
+        <Button
+          variant="outline"
+          onClick={handleFillDemoCredentials}
+          className="w-full border-teal-200 text-teal-700 hover:bg-teal-50"
+        >
+          <Sparkles className="w-4 h-4 mr-2" />
+          Fill Demo Credentials
+        </Button>
       </div>
     );
   };
@@ -669,6 +733,7 @@ function MobileOnboardingContent() {
             const selected = selectedOption(category);
             if (!selected) return null;
             const fieldsCount = Object.keys(connections[category]?.fields || {}).length;
+            const isVerified = fieldsCount === selected.fields.length;
             return (
               <div key={category} className="flex items-center justify-between p-2 bg-slate-50 rounded-lg">
                 <div className="flex items-center gap-2">
@@ -678,9 +743,16 @@ function MobileOnboardingContent() {
                     <p className="text-xs text-slate-500">{categoryLabels[category]}</p>
                   </div>
                 </div>
-                <Badge variant="outline" className="text-xs">
-                  {fieldsCount > 0 ? `${fieldsCount} fields` : 'Not configured'}
-                </Badge>
+                {isVerified ? (
+                  <Badge variant="outline" className="text-xs bg-emerald-50 text-emerald-700 border-emerald-200">
+                    <CheckCircle className="w-3 h-3 mr-1" />
+                    Verified
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="text-xs">
+                    {fieldsCount > 0 ? `${fieldsCount} fields` : 'Not configured'}
+                  </Badge>
+                )}
               </div>
             );
           })}
@@ -703,7 +775,42 @@ function MobileOnboardingContent() {
     </div>
   );
 
+  const renderVerification = () => {
+    const provider = selectedProvider
+      ? providerOptions[selectedProvider.category].find((p) => p.value === selectedProvider.provider)
+      : null;
+
+    return (
+      <div className="px-6 py-4 flex flex-col items-center justify-center min-h-[400px] space-y-6">
+        <div className="w-24 h-24 rounded-full bg-teal-100 flex items-center justify-center">
+          {verificationComplete ? (
+            <CheckCircle className="w-12 h-12 text-emerald-600" />
+          ) : (
+            <Loader2 className="w-12 h-12 text-teal-600 animate-spin" />
+          )}
+        </div>
+        <div className="text-center space-y-2">
+          <h2 className="text-2xl font-bold text-slate-900">
+            {verificationComplete ? 'Verified!' : 'Verifying your details...'}
+          </h2>
+          {provider && (
+            <p className="text-slate-600">
+              {verificationComplete
+                ? `${provider.label} has been successfully connected`
+                : `Please wait while we verify your ${provider.label} connection`}
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const renderStepContent = () => {
+    // Show verification screen if verifying
+    if (isVerifying || verificationComplete) {
+      return renderVerification();
+    }
+
     // Show provider detail screen if a provider is selected
     if (selectedProvider) {
       return renderProviderDetail();
@@ -735,7 +842,7 @@ function MobileOnboardingContent() {
           {/* Header */}
           <div className="bg-teal-600 p-6 pb-4 rounded-b-[2rem] shadow-lg">
             <div className="flex items-center justify-between mb-4">
-              {(step > 0 || selectedProvider) ? (
+              {(step > 0 || selectedProvider) && !isVerifying && !verificationComplete ? (
                 <Button
                   variant="ghost"
                   size="icon"
@@ -749,53 +856,61 @@ function MobileOnboardingContent() {
               )}
               <div className="flex-1 text-center">
                 <h1 className="text-lg font-bold text-white">
-                  {selectedProvider ? 'Provider Details' : 'Onboarding'}
+                  {isVerifying || verificationComplete
+                    ? 'Verifying'
+                    : selectedProvider
+                    ? 'Provider Details'
+                    : 'Onboarding'}
                 </h1>
                 <p className="text-xs text-teal-100">
-                  {selectedProvider
+                  {isVerifying || verificationComplete
+                    ? 'Please wait...'
+                    : selectedProvider
                     ? 'Enter connection details'
                     : `Step ${step + 1} of ${steps.length}`}
                 </p>
               </div>
               <div className="w-10"></div>
             </div>
-            {!selectedProvider && <Progress value={progress} className="h-2 bg-teal-700" />}
+            {!selectedProvider && !isVerifying && !verificationComplete && <Progress value={progress} className="h-2 bg-teal-700" />}
           </div>
 
           {/* Content Area */}
           <div className="flex-1 overflow-y-auto pb-20">{renderStepContent()}</div>
 
           {/* Bottom Navigation */}
-          <div className="absolute bottom-0 left-0 right-0 bg-white border-t border-slate-200 p-4">
-            {selectedProvider ? (
-              <Button
-                onClick={handleProviderDetailSave}
-                className="w-full bg-teal-600 hover:bg-teal-700"
-                size="lg"
-              >
-                Save & Continue
-                <CheckCircle className="w-4 h-4 ml-2" />
-              </Button>
-            ) : (
-              <Button
-                onClick={handleNext}
-                className="w-full bg-teal-600 hover:bg-teal-700"
-                size="lg"
-              >
-                {step === steps.length - 1 ? (
-                  <>
-                    Complete Setup
-                    <CheckCircle className="w-4 h-4 ml-2" />
-                  </>
-                ) : (
-                  <>
-                    Continue
-                    <ChevronRight className="w-4 h-4 ml-2" />
-                  </>
-                )}
-              </Button>
-            )}
-          </div>
+          {(isVerifying || verificationComplete) ? null : (
+            <div className="absolute bottom-0 left-0 right-0 bg-white border-t border-slate-200 p-4">
+              {selectedProvider ? (
+                <Button
+                  onClick={handleProviderDetailSave}
+                  className="w-full bg-teal-600 hover:bg-teal-700"
+                  size="lg"
+                >
+                  Save & Continue
+                  <CheckCircle className="w-4 h-4 ml-2" />
+                </Button>
+              ) : (
+                <Button
+                  onClick={handleNext}
+                  className="w-full bg-teal-600 hover:bg-teal-700"
+                  size="lg"
+                >
+                  {step === steps.length - 1 ? (
+                    <>
+                      Complete Setup
+                      <CheckCircle className="w-4 h-4 ml-2" />
+                    </>
+                  ) : (
+                    <>
+                      Continue
+                      <ChevronRight className="w-4 h-4 ml-2" />
+                    </>
+                  )}
+                </Button>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
