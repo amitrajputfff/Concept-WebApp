@@ -146,7 +146,8 @@ setup_ssl() {
     print_info "Requesting SSL certificate for ${DOMAIN}..."
     
     # Build certbot command
-    CERTBOT_CMD="certbot certonly --standalone --preferred-challenges http -d ${DOMAIN} --email ${EMAIL} --agree-tos --no-eff-email --non-interactive"
+    # certbot entrypoint is already provided by the container; don't prefix with an extra "certbot"
+    CERTBOT_CMD="certonly --standalone --preferred-challenges http -d ${DOMAIN} --email ${EMAIL} --agree-tos --no-eff-email --non-interactive"
     
     # Add staging flag if requested
     if [ "$USE_STAGING" = "true" ]; then
@@ -175,7 +176,7 @@ setup_ssl() {
         sleep 5
         
         # Try webroot method
-        WEBROOT_CMD="certbot certonly --webroot --webroot-path=/var/www/certbot --email ${EMAIL} --agree-tos --no-eff-email --non-interactive -d ${DOMAIN}"
+        WEBROOT_CMD="certonly --webroot --webroot-path=/var/www/certbot --email ${EMAIL} --agree-tos --no-eff-email --non-interactive -d ${DOMAIN}"
         
         if [ "$USE_STAGING" = "true" ]; then
             WEBROOT_CMD="$WEBROOT_CMD --staging"
