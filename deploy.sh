@@ -18,8 +18,6 @@ NC='\033[0m' # No Color
 
 # Configuration
 DOMAIN="${DOMAIN:-propel.liaplus.com}"
-EMAIL="${EMAIL:-}"
-SSL_ENABLED="${SSL_ENABLED:-true}"
 
 # Print colored messages
 print_info() {
@@ -137,103 +135,6 @@ update_nginx_config() {
     fi
 }
 
-# Setup SSL certificates (optional)
-setup_ssl() {
-    if [ "$SSL_ENABLED" = "true" ]; then
-        print_info "Setting up SSL certificates for ${DOMAIN}..."
-        
-        if [ -z "$EMAIL" ]; then
-            print_warning "Email is required for SSL certificate setup"
-            read -p "Enter your email for Let's Encrypt: " EMAIL
-            if [ -z "$EMAIL" ]; then
-                print_error "Email cannot be empty"
-                exit 1
-            fi
-        fi
-        
-        # Check if certificate already exists
-        if [ -d "/etc/letsencrypt/live/${DOMAIN}" ]; then
-            print_info "SSL certificate already exists for ${DOMAIN}"
-            print_info "To renew, run: docker compose run --rm certbot renew"
-            return 0
-        fi
-        
-        print_info "Before obtaining SSL certificate, please ensure:"
-        print_info "  1. Domain ${DOMAIN} points to this server's IP address"
-        print_info "  2. Ports 80 and 443 are open in firewall"
-        print_info "  3. No other service is using ports 80/443"
-        read -p "Continue with SSL setup? (y/n) " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            print_warning "Skipping SSL setup. You can set it up later."
-            SSL_ENABLED="false"
-            return 0
-        fi
-        
-        # First, try standalone method (simpler, doesn't require nginx running)
-        print_info "Attempting to obtain SSL certificate using standalone method..."
-        print_info "This will temporarily use port 80, so nginx must be stopped..."
-        
-        # Stop nginx for standalone certbot
-        docker compose stop nginx 2>/dev/null || true
-        sleep 2
-        
-        # Request certificate using standalone method
-        print_info "Requesting SSL certificate for ${DOMAIN}..."
-        if docker compose run --rm certbot certonly \
-            --standalone \
-            --preferred-challenges http \
-            -d "${DOMAIN}" \
-            --email "${EMAIL}" \
-            --agree-tos \
-            --no-eff-email \
-            --non-interactive; then
-            print_success "SSL certificate obtained for ${DOMAIN}"
-            print_info "Certificate will auto-renew via certbot container"
-            # Restart nginx after certificate is obtained
-            docker compose up -d nginx
-            return 0
-        else
-            print_warning "Standalone method failed. Trying webroot method..."
-            
-            # Start nginx for webroot method
-            docker compose up -d nginx
-            sleep 5
-            
-            # Try webroot method
-            if docker compose run --rm certbot certonly \
-                --webroot \
-                --webroot-path=/var/www/certbot \
-                --email "${EMAIL}" \
-                --agree-tos \
-                --no-eff-email \
-                --non-interactive \
-                -d "${DOMAIN}"; then
-                print_success "SSL certificate obtained for ${DOMAIN}"
-                print_info "Certificate will auto-renew via certbot container"
-                return 0
-            else
-                print_error "SSL certificate setup failed. Common issues:"
-                print_info "  1. Domain ${DOMAIN} must point to this server's IP"
-                print_info "  2. Port 80 must be accessible from the internet"
-                print_info "  3. Check DNS: dig ${DOMAIN} or nslookup ${DOMAIN}"
-                print_info "  4. Check firewall: sudo ufw status (if using UFW)"
-                print_info ""
-                print_info "You can set up SSL later by running:"
-                print_info "  SSL_ENABLED=true EMAIL=${EMAIL} ./deploy.sh"
-                read -p "Continue without SSL? (y/n) " -n 1 -r
-                echo
-                if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-                    exit 1
-                fi
-                SSL_ENABLED="false"
-                return 1
-            fi
-        fi
-    else
-        print_info "SSL setup skipped. Set SSL_ENABLED=true to enable SSL."
-    fi
-}
 
 # Build and start containers
 deploy_application() {
@@ -282,9 +183,6 @@ show_deployment_info() {
     print_info "Access your application:"
     echo "  - HTTP:  http://${DOMAIN}"
     echo "  - HTTP:  http://localhost"
-    if [ "$SSL_ENABLED" = "true" ]; then
-        echo "  - HTTPS: https://${DOMAIN}"
-    fi
     echo ""
     print_info "Useful commands:"
     echo "  - View logs:        docker compose logs -f"
@@ -294,9 +192,8 @@ show_deployment_info() {
     echo "  - Restart services: docker compose restart"
     echo "  - Update app:       docker compose up -d --build"
     echo ""
-    print_info "SSL Certificate Management:"
-    echo "  - Renew certificate: docker compose run --rm certbot renew"
-    echo "  - Test renewal:      docker compose run --rm certbot renew --dry-run"
+    print_info "To set up SSL certificates, run:"
+    echo "  ./setup-ssl.sh"
     echo ""
 }
 
@@ -320,27 +217,17 @@ main() {
                 DOMAIN="$2"
                 shift 2
                 ;;
-            --email)
-                EMAIL="$2"
-                shift 2
-                ;;
-            --ssl)
-                SSL_ENABLED="true"
-                shift
-                ;;
             --help)
                 echo "Usage: ./deploy.sh [OPTIONS]"
                 echo ""
                 echo "Options:"
-                echo "  --domain DOMAIN    Set the domain name (default: dev.liaplus.com)"
-                echo "  --email EMAIL      Set email for SSL certificate"
-                echo "  --ssl              Enable SSL certificate setup"
+                echo "  --domain DOMAIN    Set the domain name (default: propel.liaplus.com)"
                 echo "  --help             Show this help message"
                 echo ""
                 echo "Environment variables:"
                 echo "  DOMAIN             Domain name"
-                echo "  EMAIL              Email for SSL"
-                echo "  SSL_ENABLED        Enable SSL (true/false)"
+                echo ""
+                echo "To set up SSL certificates, run: ./setup-ssl.sh"
                 echo ""
                 exit 0
                 ;;
@@ -358,11 +245,6 @@ main() {
     create_directories
     setup_environment
     update_nginx_config
-    
-    if [ "$SSL_ENABLED" = "true" ]; then
-        setup_ssl
-    fi
-    
     deploy_application
     wait_for_services
     show_deployment_info
