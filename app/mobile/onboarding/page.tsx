@@ -310,9 +310,23 @@ function MobileOnboardingContent() {
       }
       setStep(3);
     } else {
-      // Complete onboarding
-      completeOnboarding();
+      // Start verification process on review step
+      startVerification();
     }
+  };
+
+  const startVerification = () => {
+    setIsVerifying(true);
+    setVerificationComplete(false);
+
+    // Show "Verifying your details..." for 2-3 seconds
+    setTimeout(() => {
+      setVerificationComplete(true);
+      // Show "Verified!" for 1 second, then complete onboarding
+      setTimeout(() => {
+        completeOnboarding();
+      }, 1000);
+    }, 2500);
   };
 
   const handleBack = () => {
@@ -325,6 +339,8 @@ function MobileOnboardingContent() {
     localStorage.setItem('propel_onboarding_complete_merchant', 'true');
     localStorage.setItem('propel_business_details', JSON.stringify(businessDetails));
     localStorage.setItem('propel_connections', JSON.stringify(connections));
+    setIsVerifying(false);
+    setVerificationComplete(false);
     toast.success('Onboarding complete!');
     router.push('/mobile');
   };
@@ -373,20 +389,8 @@ function MobileOnboardingContent() {
       return;
     }
 
-    // Start verification process
-    setIsVerifying(true);
-    setVerificationComplete(false);
-
-    // Simulate verification process
-    setTimeout(() => {
-      setVerificationComplete(true);
-      setTimeout(() => {
-        setIsVerifying(false);
-        setVerificationComplete(false);
-        setSelectedProvider(null);
-        toast.success(`${provider.label} connected successfully!`);
-      }, 1500);
-    }, 2500);
+    setSelectedProvider(null);
+    toast.success(`${provider.label} connected successfully!`);
   };
 
   const handleFillDemoCredentials = () => {
@@ -686,7 +690,7 @@ function MobileOnboardingContent() {
         <Button
           variant="outline"
           onClick={handleFillDemoCredentials}
-          className="w-full border-teal-200 text-teal-700 hover:bg-teal-50"
+          className="w-full border-teal-200 text-teal-700 hover:bg-teal-50 hover:text-black"
         >
           <Sparkles className="w-4 h-4 mr-2" />
           Fill Demo Credentials
@@ -776,10 +780,6 @@ function MobileOnboardingContent() {
   );
 
   const renderVerification = () => {
-    const provider = selectedProvider
-      ? providerOptions[selectedProvider.category].find((p) => p.value === selectedProvider.provider)
-      : null;
-
     return (
       <div className="px-6 py-4 flex flex-col items-center justify-center min-h-[400px] space-y-6">
         <div className="w-24 h-24 rounded-full bg-teal-100 flex items-center justify-center">
@@ -790,16 +790,14 @@ function MobileOnboardingContent() {
           )}
         </div>
         <div className="text-center space-y-2">
-          <h2 className="text-2xl font-bold text-slate-900">
+          <h2 className="text-xl font-bold text-slate-900">
             {verificationComplete ? 'Verified!' : 'Verifying your details...'}
           </h2>
-          {provider && (
-            <p className="text-slate-600">
-              {verificationComplete
-                ? `${provider.label} has been successfully connected`
-                : `Please wait while we verify your ${provider.label} connection`}
-            </p>
-          )}
+          <p className="text-slate-600 text-sm">
+            {verificationComplete
+              ? 'All your connections have been successfully verified'
+              : 'Please wait while we verify your provider connections'}
+          </p>
         </div>
       </div>
     );
@@ -872,14 +870,16 @@ function MobileOnboardingContent() {
               </div>
               <div className="w-10"></div>
             </div>
-            {!selectedProvider && !isVerifying && !verificationComplete && <Progress value={progress} className="h-2 bg-teal-700" />}
+            {!selectedProvider && !isVerifying && !verificationComplete && (
+              <Progress value={progress} className="h-2 bg-teal-700" />
+            )}
           </div>
 
           {/* Content Area */}
           <div className="flex-1 overflow-y-auto pb-20">{renderStepContent()}</div>
 
           {/* Bottom Navigation */}
-          {(isVerifying || verificationComplete) ? null : (
+          {!isVerifying && !verificationComplete && (
             <div className="absolute bottom-0 left-0 right-0 bg-white border-t border-slate-200 p-4">
               {selectedProvider ? (
                 <Button
