@@ -17,9 +17,9 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-DOMAIN="${DOMAIN:-dev.liaplus.com}"
+DOMAIN="${DOMAIN:-propel.liaplus.com}"
 EMAIL="${EMAIL:-}"
-SSL_ENABLED="${SSL_ENABLED:-false}"
+SSL_ENABLED="${SSL_ENABLED:-true}"
 
 # Print colored messages
 print_info() {
@@ -140,45 +140,68 @@ update_nginx_config() {
 # Setup SSL certificates (optional)
 setup_ssl() {
     if [ "$SSL_ENABLED" = "true" ]; then
-        print_info "Setting up SSL certificates..."
+        print_info "Setting up SSL certificates for ${DOMAIN}..."
         
         if [ -z "$EMAIL" ]; then
-            print_error "Email is required for SSL certificate setup"
+            print_warning "Email is required for SSL certificate setup"
             read -p "Enter your email for Let's Encrypt: " EMAIL
-        fi
-        
-        if ! command_exists certbot; then
-            print_warning "Certbot is not installed. Installing certbot..."
-            
-            if command_exists apt-get; then
-                sudo apt-get update
-                sudo apt-get install -y certbot
-            elif command_exists yum; then
-                sudo yum install -y certbot
-            else
-                print_error "Cannot install certbot automatically. Please install it manually."
-                print_info "Visit: https://certbot.eff.org/"
+            if [ -z "$EMAIL" ]; then
+                print_error "Email cannot be empty"
                 exit 1
             fi
         fi
         
-        # Stop nginx temporarily for certbot
-        docker compose stop nginx 2>/dev/null || true
+        # Check if certificate already exists
+        if [ -d "/etc/letsencrypt/live/${DOMAIN}" ]; then
+            print_info "SSL certificate already exists for ${DOMAIN}"
+            print_info "To renew, run: docker compose run --rm certbot renew"
+            return 0
+        fi
         
-        # Request certificate
+        # Start nginx first to serve ACME challenges
+        print_info "Starting nginx for ACME challenge..."
+        docker compose up -d nginx 2>/dev/null || true
+        sleep 5
+        
+        # Request certificate using webroot method (nginx must be running)
         print_info "Requesting SSL certificate for ${DOMAIN}..."
-        sudo certbot certonly --standalone \
-            --preferred-challenges http \
-            -d "${DOMAIN}" \
+        docker compose run --rm certbot certonly \
+            --webroot \
+            --webroot-path=/var/www/certbot \
             --email "${EMAIL}" \
             --agree-tos \
-            --non-interactive || {
-            print_warning "SSL certificate setup failed. Continuing without SSL..."
-            SSL_ENABLED="false"
+            --no-eff-email \
+            --non-interactive \
+            -d "${DOMAIN}" || {
+            print_warning "SSL certificate setup failed. Trying standalone method..."
+            
+            # Fallback to standalone method
+            docker compose stop nginx 2>/dev/null || true
+            docker compose run --rm certbot certonly \
+                --standalone \
+                --preferred-challenges http \
+                -d "${DOMAIN}" \
+                --email "${EMAIL}" \
+                --agree-tos \
+                --no-eff-email \
+                --non-interactive || {
+                print_error "SSL certificate setup failed. Please check:"
+                print_info "  1. Domain ${DOMAIN} points to this server"
+                print_info "  2. Ports 80 and 443 are accessible"
+                print_info "  3. Firewall allows HTTP/HTTPS traffic"
+                read -p "Continue without SSL? (y/n) " -n 1 -r
+                echo
+                if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                    exit 1
+                fi
+                SSL_ENABLED="false"
+                return 1
+            }
         }
         
         if [ "$SSL_ENABLED" = "true" ]; then
-            print_success "SSL certificate obtained"
+            print_success "SSL certificate obtained for ${DOMAIN}"
+            print_info "Certificate will auto-renew via certbot container"
         fi
     else
         print_info "SSL setup skipped. Set SSL_ENABLED=true to enable SSL."
@@ -244,9 +267,9 @@ show_deployment_info() {
     echo "  - Restart services: docker compose restart"
     echo "  - Update app:       docker compose up -d --build"
     echo ""
-    print_info "To set up SSL certificates later:"
-    echo "  1. Set SSL_ENABLED=true and EMAIL=your@email.com"
-    echo "  2. Run: SSL_ENABLED=true EMAIL=your@email.com ./deploy.sh"
+    print_info "SSL Certificate Management:"
+    echo "  - Renew certificate: docker compose run --rm certbot renew"
+    echo "  - Test renewal:      docker compose run --rm certbot renew --dry-run"
     echo ""
 }
 
