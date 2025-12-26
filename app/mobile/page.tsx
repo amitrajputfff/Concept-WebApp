@@ -608,7 +608,7 @@ function MobileContent() {
             <div className={`w-64 h-64 bg-teal-500 rounded-full blur-3xl transition-all duration-700 ${isSpeechActive ? 'scale-125 opacity-50' : 'scale-100'}`}></div>
          </div>
 
-         <div className="relative z-10 flex-1 flex flex-col items-center pt-20 px-6 min-h-0">
+         <div className="relative z-10 flex-1 flex flex-col items-center pt-0 px-6 min-h-0">
             <div className="text-teal-400 text-sm font-bold uppercase tracking-widest mb-8 flex-shrink-0">LiaPlus AI</div>
            
             {/* Visualizer - Only animate when speech is active */}
@@ -745,7 +745,7 @@ function MobileContent() {
         <div className="hidden sm:block absolute top-0 left-1/2 -translate-x-1/2 w-32 h-7 bg-black rounded-b-2xl z-20"></div>
 
         {/* Screen Content */}
-        <div className="w-full h-full bg-white sm:rounded-[2rem] overflow-hidden relative sm:pt-10">
+        <div className="w-full h-full bg-slate-900 sm:rounded-[2rem] overflow-hidden relative sm:pt-10">
           {screen === 'loading' && (
             <div className="h-full flex items-center justify-center bg-slate-50">
               <div className="text-center">
