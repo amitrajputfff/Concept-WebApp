@@ -158,6 +158,8 @@ The application includes:
 | `AZURE_OPENAI_API_KEY` | API authentication key | Yes |
 | `AZURE_OPENAI_DEPLOYMENT` | Model deployment name | Yes |
 | `AZURE_OPENAI_API_VERSION` | API version (default: 2024-02-15-preview) | No |
+| `ELEVENLABS_API_KEY` | ElevenLabs API key for text-to-speech | Yes (for voice features) |
+| `ELEVENLABS_VOICE_ID` | ElevenLabs voice ID (default: Rachel) | No |
 
 ## 🎨 Component Library
 

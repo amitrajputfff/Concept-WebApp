@@ -20,7 +20,6 @@ import {
   Sparkles,
   Loader,
 } from 'lucide-react';
-import * as sdk from 'microsoft-cognitiveservices-speech-sdk';
 import { toast } from 'sonner';
 
 // Voice Script - Natural Conversation Flow
@@ -108,12 +107,11 @@ function MobileContent() {
   const [isLiaSpeaking, setIsLiaSpeaking] = useState(false);
   const [showNotification, setShowNotification] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [speechConfig, setSpeechConfig] = useState<{ key: string; region: string; voiceName: string } | null>(null);
+  const [elevenLabsConfigured, setElevenLabsConfigured] = useState(false);
   const [isLoadingSpeech, setIsLoadingSpeech] = useState(false);
   const [liveTranscript, setLiveTranscript] = useState<string>('');
   const [isSpeechInProgress, setIsSpeechInProgress] = useState(false);
-  const speechTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const synthesizerRef = useRef<sdk.SpeechSynthesizer | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const isSpeechInProgressRef = useRef<boolean>(false);
   const lastProcessedStepRef = useRef<number>(-1);
   const isProcessingRef = useRef<boolean>(false);
@@ -121,34 +119,28 @@ function MobileContent() {
   const { user, logout } = useAuth();
   const router = useRouter();
 
-  // Load Azure Speech configuration
+  // Load ElevenLabs configuration
   useEffect(() => {
-    const loadSpeechConfig = async () => {
+    const loadElevenLabsConfig = async () => {
       try {
-        const response = await fetch('/api/azure-speech');
+        const response = await fetch('/api/elevenlabs');
         const data = await response.json();
         
-        if (data.configured && data.region) {
-          // Get the key from environment (we'll need to pass it from server)
-          // For now, we'll fetch it from a secure endpoint or use a token
-          const keyResponse = await fetch('/api/azure-speech/key');
-          const keyData = await keyResponse.json();
-          
-          if (keyData.key) {
-            setSpeechConfig({
-              key: keyData.key,
-              region: data.region,
-              voiceName: data.voiceName || 'en-US-JennyNeural', // Best quality English voice
-            });
-          }
+        console.log('ElevenLabs config check:', data);
+        
+        if (data.configured) {
+          setElevenLabsConfigured(true);
+          console.log('ElevenLabs is configured and ready');
+        } else {
+          console.warn('ElevenLabs is not configured. Voice features will use fallback.');
         }
       } catch (error) {
-        console.error('Failed to load Azure Speech config:', error);
-        // Continue without Azure Speech (fallback to text-based)
+        console.error('Failed to load ElevenLabs config:', error);
+        // Continue without ElevenLabs (fallback to text-based)
       }
     };
 
-    loadSpeechConfig();
+    loadElevenLabsConfig();
   }, []);
 
   // Check onboarding status and handle redirects
@@ -248,11 +240,11 @@ function MobileContent() {
     
     let cleanupFn: (() => void) | undefined;
     
-    if (speechConfig) {
-      // Use Azure TTS to speak
-      speakWithAzureTTS(step.text, step.action === 'TRANSFER_COMPLETE');
+    if (elevenLabsConfigured) {
+      // Use ElevenLabs TTS to speak
+      speakWithElevenLabs(step.text, step.action === 'TRANSFER_COMPLETE');
     } else {
-      // Fallback to timer-based if Azure Speech not configured
+      // Fallback to timer-based if ElevenLabs not configured
       // Note: setIsLiaSpeaking already set above
         const timer = setTimeout(() => {
         setIsLiaSpeaking(false);
@@ -286,201 +278,189 @@ function MobileContent() {
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [screen, currentStep, speechConfig]);
+  }, [screen, currentStep, elevenLabsConfigured]);
 
-  // Calculate estimated speech duration in milliseconds
-  // Average speaking rate: ~150 words per minute = ~2.5 words per second
-  // Add buffer for pauses and natural speech rhythm
-  const calculateSpeechDuration = (text: string): number => {
-    const words = text.split(/\s+/).length;
-    const wordsPerSecond = 2.3; // Slightly slower for natural speech
-    const baseDuration = (words / wordsPerSecond) * 1000; // Convert to milliseconds
-    const minDuration = 2000; // Minimum 2 seconds
-    const buffer = 500; // Add 500ms buffer
-    return Math.max(baseDuration + buffer, minDuration);
-  };
-
-  // Cleanup speech timer
-  const clearSpeechTimer = () => {
-    if (speechTimerRef.current) {
-      clearTimeout(speechTimerRef.current);
-      speechTimerRef.current = null;
-    }
-  };
-
-  // Speak text using Azure TTS with live transcript
-  const speakWithAzureTTS = async (text: string, isLastMessage: boolean) => {
-    // Clear any existing timer
-    clearSpeechTimer();
-    
-    // Double-check: prevent multiple calls (but allow if we just set the ref)
-    if (synthesizerRef.current) {
-      console.warn('Synthesizer already exists, closing previous one');
-      try {
-        (synthesizerRef.current as sdk.SpeechSynthesizer).close();
-      } catch (e) {
-        console.warn('Error closing existing synthesizer:', e);
+  // Cleanup audio on unmount
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
       }
-      synthesizerRef.current = null;
+    };
+  }, []);
+
+  // Speak text using ElevenLabs TTS with live transcript
+  const speakWithElevenLabs = async (text: string, isLastMessage: boolean) => {
+    // Stop any existing audio
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
     }
     
     // Set transcript immediately
     setLiveTranscript(text);
     
-    // Calculate estimated speech duration
-    const estimatedDuration = calculateSpeechDuration(text);
-    
-    if (!speechConfig) {
-      // Fallback: show transcript and continue after delay
-      setIsLiaSpeaking(true);
-      setIsLoadingSpeech(false);
-      setIsSpeechInProgress(true);
-      isSpeechInProgressRef.current = true;
+    try {
+      setIsLoadingSpeech(true);
+      console.log('Calling ElevenLabs API for text:', text.substring(0, 50) + '...');
+
+      // Call ElevenLabs API
+      const response = await fetch('/api/elevenlabs', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ text }),
+      });
       
-      speechTimerRef.current = setTimeout(() => {
+      console.log('ElevenLabs API response status:', response.status, response.statusText);
+
+      if (!response.ok) {
+        // Try to get error details - check content type first
+        const contentType = response.headers.get('content-type');
+        let errorMessage = 'Failed to generate speech';
+        
+        if (contentType && contentType.includes('application/json')) {
+          try {
+            const errorData = await response.json();
+            errorMessage = errorData.error || errorData.details || errorMessage;
+            console.error('ElevenLabs API Error (JSON):', errorData);
+          } catch (e) {
+            console.error('Failed to parse error JSON:', e);
+          }
+        } else {
+          try {
+            const errorText = await response.text();
+            console.error('ElevenLabs API Error (text):', errorText);
+            errorMessage = errorText || errorMessage;
+          } catch (e) {
+            console.error('Failed to read error text:', e);
+          }
+        }
+        throw new Error(errorMessage);
+      }
+
+      // Check content type to ensure we got audio
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('audio')) {
+        const errorText = await response.text();
+        console.error('Expected audio but got:', contentType, errorText);
+        throw new Error('Server did not return audio content');
+      }
+
+      // Get audio blob
+      const audioBlob = await response.blob();
+      console.log('Received audio blob, size:', audioBlob.size, 'bytes', 'type:', audioBlob.type);
+      
+      if (audioBlob.size === 0) {
+        throw new Error('Received empty audio blob');
+      }
+      
+      const audioUrl = URL.createObjectURL(audioBlob);
+      console.log('Created audio URL:', audioUrl);
+
+      // Create audio element
+      const audio = new Audio(audioUrl);
+      audioRef.current = audio;
+
+      // Set up event handlers to track actual playback
+      audio.onloadstart = () => {
+        console.log('Audio loading started');
+        setIsLoadingSpeech(false);
+        setIsLiaSpeaking(true);
+      };
+
+      audio.oncanplay = () => {
+        console.log('Audio can play');
+      };
+
+      audio.onplay = () => {
+        console.log('Audio playback started');
+        setIsLoadingSpeech(false);
+        setIsLiaSpeaking(true);
+        isSpeechInProgressRef.current = true;
+        setIsSpeechInProgress(true);
+      };
+
+      audio.onended = () => {
+        console.log('Audio playback ended');
+        // Speech playback has actually finished
         setIsLiaSpeaking(false);
+        setIsLoadingSpeech(false);
         setIsSpeechInProgress(false);
         isSpeechInProgressRef.current = false;
         isProcessingRef.current = false;
-        speechTimerRef.current = null;
         
+        // Cleanup
+        URL.revokeObjectURL(audioUrl);
+        audioRef.current = null;
+        
+        // Move to next step
         if (isLastMessage) {
           setTimeout(() => setScreen('success'), 1000);
         } else {
           setCurrentStep(prev => prev + 1);
         }
-      }, estimatedDuration);
-      return;
-    }
+      };
 
-    try {
-      setIsLiaSpeaking(true);
-      setIsLoadingSpeech(true);
-
-      // Create speech config
-      const speechConfigObj = sdk.SpeechConfig.fromSubscription(
-        speechConfig.key,
-        speechConfig.region
-      );
-      // Explicitly set to English (US) only for TTS
-      speechConfigObj.speechSynthesisLanguage = 'en-US';
-      speechConfigObj.speechSynthesisVoiceName = speechConfig.voiceName || 'en-US-JennyNeural';
-
-      // Create audio config
-      const audioConfig = sdk.AudioConfig.fromDefaultSpeakerOutput();
-
-      // Create synthesizer - only if one doesn't exist
-      if (synthesizerRef.current) {
-        console.warn('Synthesizer already exists, skipping creation');
-        return;
-      }
-      
-      const synthesizer = new sdk.SpeechSynthesizer(speechConfigObj, audioConfig);
-      synthesizerRef.current = synthesizer;
-
-      // Speak the text - use the ref to ensure we're using the correct synthesizer
-      const currentSynthesizer = synthesizerRef.current;
-      if (!currentSynthesizer) {
-        console.error('Synthesizer was cleared before speaking');
+      audio.onerror = (error) => {
+        console.error('Audio playback error:', {
+          error,
+          code: audio.error?.code,
+          message: audio.error?.message,
+          networkState: audio.networkState,
+          readyState: audio.readyState
+        });
         setIsLiaSpeaking(false);
         setIsLoadingSpeech(false);
-        isSpeechInProgressRef.current = false;
         setIsSpeechInProgress(false);
+        isSpeechInProgressRef.current = false;
         isProcessingRef.current = false;
-        return;
-      }
-
-      // Speech has been initiated - set loading to false (speech is now playing)
-      // Use a small delay to ensure the speech actually starts
-      setTimeout(() => {
-        setIsLoadingSpeech(false);
-      }, 100);
-
-      currentSynthesizer.speakTextAsync(
-        text,
-        (result: any) => {
-          // Only process if this is still the current synthesizer
-          if (synthesizerRef.current !== currentSynthesizer) {
-            console.warn('Synthesizer changed during speech, ignoring result');
-            return;
-          }
-          
-          // IMPORTANT: The callback fires when synthesis completes, NOT when playback finishes
-          // We need to keep isLiaSpeaking true for the estimated playback duration
-          // Close the synthesizer but keep the speaking state active
-          currentSynthesizer.close();
-          synthesizerRef.current = null;
-          
-          // Calculate when speech will actually finish playing
-          // The synthesis is done, but audio is still playing
-          const playbackStartTime = Date.now();
-          const estimatedPlaybackDuration = estimatedDuration - 200; // Subtract synthesis time estimate
-          
-          // Set a timer to track when playback actually finishes
-          speechTimerRef.current = setTimeout(() => {
-            // Now speech playback has actually finished
-            setIsLiaSpeaking(false);
-            setIsLoadingSpeech(false);
-            setIsSpeechInProgress(false);
-            isSpeechInProgressRef.current = false;
-            isProcessingRef.current = false;
-            speechTimerRef.current = null;
-            
-            if (result.reason === sdk.ResultReason.SynthesizingAudioCompleted) {
-              if (isLastMessage) {
-                setTimeout(() => setScreen('success'), 1000);
-              } else {
-                setCurrentStep(prev => prev + 1);
-              }
-            } else {
-              console.error('Speech synthesis failed:', result.reason);
-              // Fallback: continue to next step
-              if (isLastMessage) {
-                setTimeout(() => setScreen('success'), 1000);
-              } else {
-                setCurrentStep(prev => prev + 1);
-              }
-            }
-          }, Math.max(estimatedPlaybackDuration, 1000)); // At least 1 second
-        },
-        (error: any) => {
-          // Only process if this is still the current synthesizer
-          if (synthesizerRef.current !== currentSynthesizer) {
-            console.warn('Synthesizer changed during speech, ignoring error');
-            return;
-          }
-          
-          console.error('Speech synthesis error:', error);
-          // Clear timer on error
-          clearSpeechTimer();
-          // Reset all states on error
-          setIsLiaSpeaking(false);
-          setIsLoadingSpeech(false);
-          setIsSpeechInProgress(false);
-          isSpeechInProgressRef.current = false;
-          isProcessingRef.current = false;
-          currentSynthesizer.close();
-          synthesizerRef.current = null;
-          toast.error('Speech synthesis failed. Continuing...');
-          // Fallback: continue to next step
-          if (isLastMessage) {
-            setTimeout(() => setScreen('success'), 1000);
-          } else {
-            setCurrentStep(prev => prev + 1);
-          }
+        URL.revokeObjectURL(audioUrl);
+        audioRef.current = null;
+        toast.error('Speech playback failed. Continuing...');
+        
+        // Fallback: continue to next step
+        if (isLastMessage) {
+          setTimeout(() => setScreen('success'), 1000);
+        } else {
+          setCurrentStep(prev => prev + 1);
         }
-      );
+      };
+
+      // Start playback with error handling for autoplay policy
+      try {
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise
+            .then(() => {
+              console.log('Audio play() succeeded');
+            })
+            .catch((playError) => {
+              console.error('Audio play() failed:', playError);
+              // Browser autoplay policy blocked - user interaction required
+              toast.error('Please interact with the page to enable audio playback');
+              setIsLiaSpeaking(false);
+              setIsLoadingSpeech(false);
+              setIsSpeechInProgress(false);
+              isSpeechInProgressRef.current = false;
+              isProcessingRef.current = false;
+            });
+        }
+      } catch (playError) {
+        console.error('Error calling audio.play():', playError);
+        throw playError;
+      }
     } catch (error) {
-      console.error('Azure TTS error:', error);
-      // Clear timer on error
-      clearSpeechTimer();
-      // Reset ALL state variables when speech fails
+      console.error('ElevenLabs TTS error:', error);
       setIsLiaSpeaking(false);
       setIsLoadingSpeech(false);
       setIsSpeechInProgress(false);
       isSpeechInProgressRef.current = false;
       isProcessingRef.current = false;
-      toast.error('Failed to initialize speech. Continuing...');
+      toast.error('Failed to generate speech. Continuing...');
+      
       // Fallback: continue to next step
       if (isLastMessage) {
         setTimeout(() => setScreen('success'), 1000);
@@ -489,13 +469,6 @@ function MobileContent() {
       }
     }
   };
-  
-  // Cleanup timer on unmount
-  useEffect(() => {
-    return () => {
-      clearSpeechTimer();
-    };
-  }, []);
 
   // Compute if speech is active (for button disabled state)
   // This must be computed on every render to ensure button updates
@@ -514,10 +487,10 @@ function MobileContent() {
   };
 
   const handleEndCall = () => {
-    // Clean up speech resources
-    if (synthesizerRef.current) {
-      synthesizerRef.current.close();
-      synthesizerRef.current = null;
+    // Clean up audio resources
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
     }
     
     // Reset voice state and return to dashboard
@@ -527,6 +500,7 @@ function MobileContent() {
     isSpeechInProgressRef.current = false;
     setIsSpeechInProgress(false);
     lastProcessedStepRef.current = -1;
+    isProcessingRef.current = false;
     setLiveTranscript('');
     setScreen('dashboard');
   };
@@ -634,11 +608,11 @@ function MobileContent() {
             <div className={`w-64 h-64 bg-teal-500 rounded-full blur-3xl transition-all duration-700 ${isSpeechActive ? 'scale-125 opacity-50' : 'scale-100'}`}></div>
          </div>
 
-         <div className="relative z-10 flex-1 flex flex-col items-center pt-20 px-6">
-            <div className="text-teal-400 text-sm font-bold uppercase tracking-widest mb-8">LiaPlus AI</div>
+         <div className="relative z-10 flex-1 flex flex-col items-center pt-20 px-6 min-h-0">
+            <div className="text-teal-400 text-sm font-bold uppercase tracking-widest mb-8 flex-shrink-0">LiaPlus AI</div>
            
             {/* Visualizer - Only animate when speech is active */}
-            <div className="flex items-center gap-1 h-12 mb-12">
+            <div className="flex items-center gap-1 h-12 mb-12 flex-shrink-0">
                {[...Array(5)].map((_, i) => (
                   <div 
                      key={i} 
@@ -653,17 +627,17 @@ function MobileContent() {
                ))}
             </div>
 
-            {/* Live Transcript */}
-            <div className="w-full max-w-md space-y-4">
+            {/* Live Transcript - Scrollable */}
+            <div className="w-full max-w-md flex-1 min-h-0 overflow-y-auto space-y-4 pb-4">
                {liveTranscript || (step && step.speaker === 'lia' && step.text) ? (
                   <div className="bg-slate-800/80 backdrop-blur-md rounded-2xl p-6 border border-slate-700 shadow-xl">
                      <div className="flex items-start gap-3 mb-3">
                         <div className="w-8 h-8 bg-teal-600 rounded-full flex items-center justify-center flex-shrink-0">
                            <span className="text-white text-xs font-bold">L</span>
                         </div>
-                        <div className="flex-1">
+                        <div className="flex-1 min-w-0">
                            <div className="text-xs text-teal-400 font-semibold mb-2">Lia</div>
-                           <p className="text-white text-base leading-relaxed">
+                           <p className="text-white text-base leading-relaxed break-words">
                               {liveTranscript || (step && step.text)}
                            </p>
                         </div>
@@ -690,9 +664,9 @@ function MobileContent() {
                         <div className="w-8 h-8 bg-slate-600 rounded-full flex items-center justify-center flex-shrink-0">
                            <span className="text-white text-xs font-bold">{user?.name?.charAt(0) || 'M'}</span>
                         </div>
-                        <div className="flex-1">
+                        <div className="flex-1 min-w-0">
                            <div className="text-xs text-slate-400 font-semibold mb-2">You</div>
-                           <p className="text-white text-base leading-relaxed">
+                           <p className="text-white text-base leading-relaxed break-words">
                               {step.text}
                            </p>
                         </div>
@@ -707,7 +681,7 @@ function MobileContent() {
          </div>
 
          {/* User Controls */}
-         <div className="relative z-10 bg-slate-800 p-8 rounded-t-3xl border-t border-slate-700">
+         <div className="relative z-10 bg-slate-800 p-8 rounded-t-3xl border-t border-slate-700 flex-shrink-0">
             {isUserTurn ? (
                <div className="space-y-3">
                   <button
