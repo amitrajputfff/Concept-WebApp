@@ -1,183 +1,354 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { ProtectedRoute, useAuth } from '@/lib/auth-context';
-import { generateChatExplanation } from '@/lib/ai';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import {
   Menu,
-  Bell,
-  MessageSquare,
-  ChevronLeft,
-  Send,
-  Sparkles,
-  Loader,
   CheckCircle,
   Smartphone,
   Activity,
   Zap,
   User,
   LogOut,
+  TrendingUp,
+  Phone,
+  PhoneOff,
+  Mic,
+  Lock,
+  Sparkles,
 } from 'lucide-react';
-import { toast } from 'sonner';
 
-// Chat script
-const chatScript = [
+// Voice Script - Natural Conversation Flow
+const voiceScript = [
   {
     id: 1,
-    sender: 'clara',
-    text: "Hi Maria! Propel Intelligence detected a 'Game Day Alert' for Taco Rico. We're flagging a critical inventory risk for this Saturday.",
-    delay: 500,
+    speaker: 'lia',
+    text: "Hey Maria, it's Lia from Propel. Do you have a quick minute? I noticed a massive opportunity for this weekend that I wanted to flag for you.",
+    duration: 3000
   },
   {
     id: 2,
-    sender: 'clara',
-    text: "Context: The Big Game is Saturday (Sep 18). We predict a 280% spike in wing demand. Your current inventory is only at 40%. You risk losing over $12,000 in revenue, similar to the $8,000 loss you faced last season.",
-    delay: 2000,
+    speaker: 'user',
+    text: "Oh, hey Lia. Yeah, I'm just doing prep work. What's up?",
+    triggerLabel: "Say: \"Hey Lia, what's up?\""
   },
   {
     id: 3,
-    sender: 'user',
-    text: "Wow, I didn't realize it was that low. But honestly, I have payroll and supplier payments ($33k) hitting this week, and I only have $30k in the bank.",
-    triggerLabel: "Reply: mention payroll/cash crunch",
+    speaker: 'lia',
+    text: "So, Saturday is the big ASU versus Oregon game. Based on neighborhood foot traffic, we're projecting a 280% surge in demand. But I'm looking at your inventory, and your wings are only at 40%.",
+    duration: 5000
   },
   {
     id: 4,
-    sender: 'clara',
-    text: "I see that. That's why I've generated a Game Day Package for you: $30,000 available now.",
-    delay: 1000,
+    speaker: 'lia',
+    text: "If you don't stock up, my models show you might miss out on about $12,000 in revenue. I want to help you capture that.",
+    duration: 4000
   },
   {
     id: 5,
-    sender: 'clara',
-    text: "This covers your supplier restock to capture that $12k upside, plus gives you a buffer for payroll. The cost is approx $2,400, which means a 400% ROI on the revenue you're protecting.",
-    delay: 2500,
+    speaker: 'user',
+    text: "Wow, $12k? I knew it would be busy, but I skipped my order because payroll is due. I'm tight on cash right now.",
+    triggerLabel: "Say: \"I'm tight on cash right now.\""
   },
   {
     id: 6,
-    sender: 'user',
-    text: "That sounds like a lifesaver. But how does the repayment work? I can't add another fixed monthly bill right now.",
-    triggerLabel: "Reply: Ask about repayment",
+    speaker: 'lia',
+    text: "I completely understand. That's why I've already approved a $30,000 'Game Day Package' for you. It covers the restock and gives you a buffer for payroll. Funds can be there instantly.",
+    duration: 5000
   },
   {
     id: 7,
-    sender: 'clara',
-    text: "It's simple: We take 8% of your daily sales for about 12 weeks. It's auto-collected, so when sales are high (like Saturday), you pay more. When they're low, you pay less.",
-    delay: 1500,
+    speaker: 'user',
+    text: "That sounds amazing, but I can't take on a fixed monthly bill. How do I pay it back?",
+    triggerLabel: "Say: \"How do I pay it back?\""
   },
   {
     id: 8,
-    sender: 'user',
-    text: "Okay, that works for me. Let's do it.",
-    triggerLabel: "Reply: Accept Offer",
+    speaker: 'lia',
+    text: "No fixed bill. We just take 8% of your daily sales. So on a huge Saturday, you pay more. On a slow Tuesday, you pay almost nothing. It flexes with your business.",
+    duration: 5000
   },
   {
     id: 9,
-    sender: 'clara',
-    text: "Perfect. I'm processing the $30,000 instant transfer now. No forms, no waiting. You're all set for the Big Game!",
-    delay: 1500,
-    action: 'TRANSFER_COMPLETE',
+    speaker: 'user',
+    text: "Okay, that actually makes sense. Let's do it.",
+    triggerLabel: "Say: \"Let's do it.\""
   },
+  {
+    id: 10,
+    speaker: 'lia',
+    text: "Done. I've initiated the transfer to your Chase account. I've also queued the order with Southwest Food Distributors for Thursday delivery. You're all set to crush it this weekend!",
+    duration: 4000,
+    action: 'TRANSFER_COMPLETE'
+  }
 ];
 
-interface ChatMessage {
-  id: number;
-  sender: string;
-  text: string;
-  isAi?: boolean;
-  triggerLabel?: string;
-  delay?: number;
-  action?: string;
-}
-
 function MobileContent() {
-  const [activeScreen, setActiveScreen] = useState<'home' | 'chat'>('home');
-  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
+  // Initialize screen state based on immediate check
+  const getInitialScreen = (): 'lock' | 'dashboard' | 'voice' | 'success' | 'loading' => {
+    if (typeof window === 'undefined') return 'loading';
+    
+    const onboardingComplete = localStorage.getItem('propel_onboarding_complete_merchant');
+    
+    if (onboardingComplete === 'true') {
+      // After onboarding, lock screen is always the default
+      return 'lock';
+    } else {
+      return 'loading'; // Will redirect in useEffect
+    }
+  };
+
+  const [screen, setScreen] = useState<'lock' | 'dashboard' | 'voice' | 'success' | 'loading'>(getInitialScreen);
   const [currentStep, setCurrentStep] = useState(0);
-  const [isTyping, setIsTyping] = useState(false);
-  const [showTransferSuccess, setShowTransferSuccess] = useState(false);
-  const [isExplaining, setIsExplaining] = useState(false);
+  const [isLiaSpeaking, setIsLiaSpeaking] = useState(false);
+  const [showNotification, setShowNotification] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const { user, logout } = useAuth();
   const router = useRouter();
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
+  // Check onboarding status and handle redirects
   useEffect(() => {
-    scrollToBottom();
-  }, [chatHistory, isTyping]);
+    const onboardingComplete = localStorage.getItem('propel_onboarding_complete_merchant');
+    const justCompleted = sessionStorage.getItem('propel_just_completed_onboarding');
+    
+    if (onboardingComplete === 'true') {
+      // After onboarding, lock screen is always the default
+      if (screen === 'loading') {
+        setScreen('lock');
+      }
+      // Clear the just completed flag if it exists (for first time after onboarding)
+      if (justCompleted === 'true') {
+        setTimeout(() => {
+          sessionStorage.removeItem('propel_just_completed_onboarding');
+        }, 500);
+      }
+    } else {
+      // Not onboarded, redirect to onboarding
+      if (screen === 'loading') {
+        router.push('/mobile/onboarding');
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount
 
-  // Handle auto-advancing the script for Clara's lines
+  // Trigger notification on lock screen
   useEffect(() => {
-    if (activeScreen === 'chat' && currentStep < chatScript.length) {
-      const stepData = chatScript[currentStep];
+    if (screen === 'lock') {
+      const timer = setTimeout(() => setShowNotification(true), 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [screen]);
 
-      if (stepData.sender === 'clara') {
-        setIsTyping(true);
+  // Handle Voice Flow
+  useEffect(() => {
+    if (screen === 'voice' && currentStep < voiceScript.length) {
+      const step = voiceScript[currentStep];
+      if (step.speaker === 'lia') {
+        setIsLiaSpeaking(true);
         const timer = setTimeout(() => {
-          setIsTyping(false);
-          setChatHistory((prev) => [...prev, stepData]);
-
-          if (stepData.action === 'TRANSFER_COMPLETE') {
-            setTimeout(() => setShowTransferSuccess(true), 1500);
+          setIsLiaSpeaking(false);
+          if (step.action === 'TRANSFER_COMPLETE') {
+            setTimeout(() => setScreen('success'), 1000);
+          } else {
+            setCurrentStep(prev => prev + 1);
           }
-
-          setCurrentStep((prev) => prev + 1);
-        }, stepData.delay);
+        }, step.duration);
         return () => clearTimeout(timer);
       }
     }
-  }, [activeScreen, currentStep]);
+  }, [screen, currentStep]);
 
-  const handleUserReply = () => {
-    const stepData = chatScript[currentStep];
-    setChatHistory((prev) => [...prev, stepData]);
-    setCurrentStep((prev) => prev + 1);
+  const handleUserSpeak = () => {
+    setCurrentStep(prev => prev + 1);
   };
 
-  const handleAskClara = async () => {
-    setIsExplaining(true);
-    setIsTyping(true);
-    toast.info('Clara is thinking...');
-
-    try {
-      const aiResponse = await generateChatExplanation('8% daily sales deduction terms');
-      setIsTyping(false);
-      setIsExplaining(false);
-
-      setChatHistory((prev) => [
-        ...prev,
-        {
-          id: Date.now(),
-          sender: 'clara',
-          text: aiResponse,
-          isAi: true,
-        },
-      ]);
-      toast.success('Clara responded');
-    } catch (error) {
-      setIsTyping(false);
-      setIsExplaining(false);
-      toast.error('Failed to get response');
-      console.error(error);
-    }
-  };
-
-  const handleReset = () => {
-    setShowTransferSuccess(false);
-    setActiveScreen('home');
-    setChatHistory([]);
+  const handleEndCall = () => {
+    // Reset voice state and return to dashboard
     setCurrentStep(0);
+    setIsLiaSpeaking(false);
+    setScreen('dashboard');
   };
+
+  // --- SCREENS ---
+
+  const LockScreen = () => (
+    <div 
+      className="h-full bg-[url('https://images.unsplash.com/photo-1550989460-0adf9ea622e2?q=80&w=600&auto=format&fit=crop')] bg-cover bg-center relative flex flex-col items-center pt-20 cursor-pointer"
+      onClick={() => setScreen('dashboard')}
+    >
+      <div className="text-6xl font-thin text-white mb-2">{new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
+      <div className="text-lg text-white font-medium mb-10">{new Date().toLocaleDateString([], {weekday: 'long', month: 'long', day: 'numeric'})}</div>
+     
+      {showNotification && (
+        <div
+          onClick={(e) => {
+            e.stopPropagation(); // Prevent triggering parent click
+            setScreen('dashboard');
+          }}
+          className="w-[90%] bg-white/90 backdrop-blur-md rounded-2xl p-4 shadow-xl animate-in slide-in-from-top-4 cursor-pointer active:scale-95 transition-transform"
+        >
+          <div className="flex justify-between items-start mb-2">
+            <div className="flex items-center gap-2">
+              <div className="w-5 h-5 bg-teal-600 rounded flex items-center justify-center text-[10px] text-white font-bold">P</div>
+              <span className="text-xs font-bold text-slate-700 uppercase">Propel Capital • Now</span>
+            </div>
+          </div>
+          <div className="font-semibold text-slate-900 text-sm">Game Day Opportunity Detected 🏈</div>
+          <div className="text-slate-600 text-xs mt-1">Projected 280% demand surge for ASU vs Oregon. Tap to view insights.</div>
+        </div>
+      )}
+     
+      <div className="mt-auto mb-8 flex justify-center w-full">
+         <div className="w-12 h-12 bg-white/20 backdrop-blur rounded-full flex items-center justify-center text-white">
+            <Lock size={20} />
+         </div>
+      </div>
+    </div>
+  );
+
+  const DashboardScreen = () => (
+    <div className="h-full bg-slate-50 flex flex-col font-sans">
+       <div className="bg-white p-6 pb-4 shadow-sm z-10">
+          <div className="flex justify-between items-center mb-6">
+             <Button 
+               variant="ghost" 
+               size="icon" 
+               className="text-slate-400 hover:text-slate-800"
+               onClick={() => setMenuOpen(true)}
+             >
+               <Menu size={24} />
+             </Button>
+             <span className="font-bold text-slate-900">Propel</span>
+             <div className="w-8 h-8 bg-teal-100 rounded-full flex items-center justify-center text-teal-700 font-bold text-xs">
+               {user?.name?.charAt(0) || 'M'}
+             </div>
+          </div>
+          <h2 className="text-2xl font-light text-slate-600">Hello, <span className="font-bold text-slate-900">{user?.name || 'Maria'}</span></h2>
+       </div>
+
+       <div className="p-6 space-y-6 overflow-y-auto">
+          {/* Hero Insight Card */}
+          <div className="bg-gradient-to-br from-teal-600 to-teal-800 rounded-2xl p-6 text-white shadow-lg shadow-teal-200">
+             <div className="flex items-center gap-2 mb-4">
+                <Sparkles size={18} className="text-yellow-300 animate-pulse"/>
+                <span className="text-xs font-bold uppercase tracking-wider text-teal-100">Opportunity Alert</span>
+             </div>
+             <h3 className="text-xl font-bold mb-2">280% Demand Surge Predicted</h3>
+             <p className="text-teal-100 text-sm mb-6 leading-relaxed">
+                ASU vs Oregon (Saturday). Your current inventory won't meet this demand.
+             </p>
+             <button
+               onClick={() => setScreen('voice')}
+               className="w-full bg-white text-teal-800 font-bold py-3 rounded-xl flex items-center justify-center gap-2 shadow-sm hover:bg-teal-50 transition-colors"
+             >
+                <Phone size={18} /> Speak with Lia
+             </button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+             <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
+                <div className="text-slate-400 text-xs mb-1">Projected Sales</div>
+                <div className="text-xl font-bold text-slate-800">$15,000</div>
+                <div className="text-xs text-emerald-500 mt-1 flex items-center gap-1"><TrendingUp size={12}/> +280%</div>
+             </div>
+             <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
+                <div className="text-slate-400 text-xs mb-1">Inventory Gap</div>
+                <div className="text-xl font-bold text-red-500">-158 lbs</div>
+                <div className="text-xs text-slate-400 mt-1">Wings needed</div>
+             </div>
+          </div>
+       </div>
+    </div>
+  );
+
+  const VoiceScreen = () => {
+    const step = voiceScript[currentStep];
+    const isUserTurn = step?.speaker === 'user';
+
+    return (
+      <div className="h-full bg-slate-900 flex flex-col relative overflow-hidden">
+         {/* Background Animation */}
+         <div className="absolute inset-0 flex items-center justify-center opacity-20">
+            <div className={`w-64 h-64 bg-teal-500 rounded-full blur-3xl transition-all duration-700 ${isLiaSpeaking ? 'scale-125 opacity-50' : 'scale-100'}`}></div>
+         </div>
+
+         <div className="relative z-10 flex-1 flex flex-col items-center pt-20 px-6">
+            <div className="text-teal-400 text-sm font-bold uppercase tracking-widest mb-8">LiaPlus AI</div>
+           
+            {/* Visualizer */}
+            <div className="flex items-center gap-1 h-12 mb-12">
+               {[...Array(5)].map((_, i) => (
+                  <div key={i} className={`w-2 bg-white rounded-full transition-all duration-300 ${isLiaSpeaking ? 'animate-bounce' : 'h-2'}`} style={{animationDelay: `${i * 0.1}s`, height: isLiaSpeaking ? '48px' : '8px'}}></div>
+               ))}
+            </div>
+
+            {/* Captions */}
+            <div className="w-full max-w-xs text-center space-y-4">
+               {isLiaSpeaking ? (
+                  <p className="text-white text-lg font-medium leading-relaxed animate-in fade-in slide-in-from-bottom-2">
+                     "{step.text}"
+                  </p>
+               ) : (
+                  <p className="text-slate-500 italic">Listening...</p>
+               )}
+            </div>
+         </div>
+
+         {/* User Controls */}
+         <div className="relative z-10 bg-slate-800 p-8 rounded-t-3xl border-t border-slate-700">
+            {isUserTurn ? (
+               <div className="space-y-3">
+                  <button
+                    onClick={handleUserSpeak}
+                    className="w-full bg-teal-600 hover:bg-teal-500 text-white font-bold py-4 rounded-2xl shadow-lg shadow-teal-900/50 flex items-center justify-center gap-3 transition-all transform active:scale-95"
+                  >
+                     <Mic size={24} /> {step.triggerLabel}
+                  </button>
+                  <button
+                    onClick={handleEndCall}
+                    className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-3 rounded-xl flex items-center justify-center gap-2 transition-all transform active:scale-95"
+                  >
+                     <PhoneOff size={20} /> End Call
+                  </button>
+               </div>
+            ) : (
+               <button
+                 onClick={handleEndCall}
+                 className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-4 rounded-xl flex items-center justify-center gap-2 transition-all transform active:scale-95"
+               >
+                  <PhoneOff size={20} /> End Call
+               </button>
+            )}
+         </div>
+      </div>
+    );
+  };
+
+  const SuccessScreen = () => (
+    <div className="h-full bg-white flex flex-col items-center justify-center p-8 text-center animate-in zoom-in duration-300">
+       <div className="w-24 h-24 bg-teal-100 rounded-full flex items-center justify-center mb-6 animate-bounce">
+          <CheckCircle size={48} className="text-teal-600" />
+       </div>
+       <h2 className="text-3xl font-bold text-slate-900 mb-2">All Set, {user?.name || 'Maria'}!</h2>
+       <p className="text-slate-500 mb-8">Funds sent. Order placed. You're ready for Game Day.</p>
+      
+       <div className="w-full bg-slate-50 rounded-2xl p-6 border border-slate-100 space-y-4">
+          <div className="flex justify-between items-center">
+             <span className="text-sm text-slate-500">Transfer Amount</span>
+             <span className="font-bold text-slate-900">$30,000</span>
+          </div>
+          <div className="flex justify-between items-center">
+             <span className="text-sm text-slate-500">Order Status</span>
+             <span className="font-bold text-teal-600">Confirmed</span>
+          </div>
+       </div>
+      
+       <button onClick={() => setScreen('dashboard')} className="mt-8 text-teal-600 font-semibold text-sm">Close</button>
+    </div>
+  );
 
   return (
     <div className="h-screen w-full flex items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200">
@@ -188,238 +359,18 @@ function MobileContent() {
 
         {/* Screen Content */}
         <div className="w-full h-full bg-white sm:rounded-[2rem] overflow-hidden relative sm:pt-10">
-          {activeScreen === 'home' ? (
-            <div className="h-full bg-slate-50 flex flex-col min-h-0">
-              {/* Header */}
-              <div className="bg-teal-600 p-6 pb-12 rounded-b-[2.5rem] shadow-lg">
-                <div className="flex justify-between items-center text-white mb-6">
-                  <Button 
-                    variant="ghost" 
-                    size="icon" 
-                    className="text-white hover:bg-teal-700"
-                    onClick={() => setMenuOpen(true)}
-                  >
-                    <Menu size={24} />
-                  </Button>
-                  <div className="relative cursor-pointer">
-                    <Bell size={24} />
-                    <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-400 rounded-full border-2 border-teal-600"></span>
-                  </div>
-                </div>
-                <h2 className="text-3xl font-light text-white">Good Morning,</h2>
-                <h1 className="text-3xl font-bold text-white">{user?.name}</h1>
-                <div className="text-teal-100 text-sm mt-1">
-                  {user?.business} • {user?.location}
-                </div>
-              </div>
-
-              {/* Main Content */}
-              <div className="px-6 -mt-8 flex-1 overflow-y-auto pb-20 space-y-6">
-                {/* Notification Card */}
-                <Card
-                  onClick={() => setActiveScreen('chat')}
-                  className="mb-6 active:scale-95 transition-transform cursor-pointer shadow-xl shadow-slate-200 border-teal-50 relative overflow-hidden"
-                >
-                  <div className="absolute top-0 left-0 w-1 h-full bg-teal-500"></div>
-                  <CardContent className="pt-5">
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className="w-10 h-10 rounded-full bg-teal-100 flex items-center justify-center">
-                        <span className="font-bold text-teal-700">C</span>
-                      </div>
-                      <div className="flex-1">
-                        <div className="font-bold text-slate-800">Clara (Propel)</div>
-                        <div className="text-xs text-slate-500">Just now • Game Day Alert</div>
-                      </div>
-                      <div className="w-2 h-2 bg-teal-500 rounded-full animate-pulse"></div>
-                    </div>
-                    <h3 className="font-bold text-lg text-slate-900 mb-1">Stockout Risk Detected</h3>
-                    <p className="text-sm text-slate-600 mb-3">
-                      <span className="font-bold text-red-500">High Risk:</span> Potential $12,000+ lost
-                      revenue this Saturday.
-                    </p>
-                    <div className="w-full py-2 bg-teal-50 text-teal-700 font-semibold rounded-lg text-sm flex items-center justify-center gap-2">
-                      <MessageSquare size={16} /> View Game Day Package
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Stats Row */}
-                <div className="grid grid-cols-2 gap-4">
-                  <Card>
-                    <CardContent className="pt-4">
-                      <div className="text-xs text-slate-400 mb-1">Bank Balance</div>
-                      <div className="text-xl font-bold text-slate-800">$30,000</div>
-                      <div className="text-xs text-red-500 flex items-center gap-1 mt-1">
-                        Obligations: $33k
-                      </div>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardContent className="pt-4">
-                      <div className="text-xs text-slate-400 mb-1">Inventory (Wings)</div>
-                      <div className="text-xl font-bold text-slate-800">40%</div>
-                      <div className="text-xs text-red-500 mt-1">Stockout imminent</div>
-                    </CardContent>
-                  </Card>
-                </div>
-              </div>
-
-              {/* Bottom Nav */}
-              <div className="mt-auto bg-white border-t border-slate-100 p-4 flex justify-around text-slate-400">
-                <button 
-                  onClick={() => router.push('/mobile')}
-                  className="flex flex-col items-center gap-1 text-teal-600"
-                >
-                  <Smartphone size={24} />
-                  <span className="text-[10px] font-medium">Home</span>
-                </button>
-                <button 
-                  onClick={() => router.push('/mobile/activity')}
-                  className="flex flex-col items-center gap-1 hover:text-teal-600 transition-colors"
-                >
-                  <Activity size={24} />
-                  <span className="text-[10px] font-medium">Activity</span>
-                </button>
-                <button 
-                  onClick={() => router.push('/mobile/growth')}
-                  className="flex flex-col items-center gap-1 hover:text-teal-600 transition-colors"
-                >
-                  <Zap size={24} />
-                  <span className="text-[10px] font-medium">Growth</span>
-                </button>
-                <button 
-                  onClick={() => router.push('/mobile/account')}
-                  className="flex flex-col items-center gap-1 hover:text-teal-600 transition-colors"
-                >
-                  <User size={24} />
-                  <span className="text-[10px] font-medium">Account</span>
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="h-full bg-slate-50 flex flex-col min-h-0">
-              {/* Chat Header */}
-              <div className="bg-white p-4 border-b border-slate-200 flex items-center gap-3 shadow-sm z-10">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setActiveScreen('home')}
-                  className="text-slate-500 hover:text-slate-800"
-                >
-                  <ChevronLeft size={24} />
-                </Button>
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center text-white font-bold shadow-md">
-                  C
-                </div>
-                <div>
-                  <div className="font-bold text-slate-800 text-sm">Clara</div>
-                  <div className="text-xs text-teal-600 font-medium flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 bg-teal-500 rounded-full"></span> Propel CFO Agent
-                  </div>
-                </div>
-              </div>
-
-              {/* Chat Area */}
-              <ScrollArea className="flex-1 min-h-0 p-4 bg-slate-50">
-                <div className="space-y-4">
-                  <div className="text-center text-xs text-slate-400 my-4">Wed, Sep 15 • 9:15 AM</div>
-
-                  {chatHistory.map((msg) => (
-                    <div
-                      key={msg.id}
-                      className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
-                    >
-                      <div
-                        className={`max-w-[85%] p-3 rounded-2xl text-sm leading-relaxed shadow-sm ${
-                          msg.sender === 'user'
-                            ? 'bg-teal-600 text-white rounded-br-none'
-                            : msg.isAi
-                            ? 'bg-teal-50 border border-teal-100 text-teal-800 rounded-bl-none shadow-teal-100'
-                            : 'bg-white text-slate-700 border border-slate-100 rounded-bl-none'
-                        }`}
-                      >
-                        {msg.isAi && (
-                          <div className="text-[10px] font-bold text-teal-500 mb-1 flex items-center gap-1">
-                            <Sparkles size={10} /> AI ASSISTANT
-                          </div>
-                        )}
-                        {msg.text}
-                      </div>
-                    </div>
-                  ))}
-
-                  {isTyping && (
-                    <div className="flex justify-start">
-                      <div className="bg-white border border-slate-100 p-4 rounded-2xl rounded-bl-none shadow-sm flex gap-1 items-center">
-                        <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"></span>
-                        <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce delay-75"></span>
-                        <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce delay-150"></span>
-                      </div>
-                    </div>
-                  )}
-                  <div ref={messagesEndRef} />
-                </div>
-              </ScrollArea>
-
-              {/* Success Modal */}
-              <Dialog open={showTransferSuccess} onOpenChange={setShowTransferSuccess}>
-                <DialogContent className="w-[90%] mx-auto rounded-3xl bg-white">
-                  <DialogHeader>
-                    <DialogTitle className="sr-only">Transfer Complete</DialogTitle>
-                  </DialogHeader>
-                  <div className="text-center py-4">
-                    <div className="w-20 h-20 bg-teal-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                      <CheckCircle size={40} className="text-teal-600" />
-                    </div>
-                    <h2 className="text-2xl font-bold text-slate-900 mb-2">Approval Sent!</h2>
-                    <p className="text-slate-500 mb-6">
-                      Your loan request for $30,000 has been submitted. Pending lender approval.
-                    </p>
-                    <Card className="bg-slate-50 mb-6">
-                      <CardContent className="pt-4">
-                        <div className="flex justify-between text-sm mb-2">
-                          <span className="text-slate-500">Incremental Gain</span>
-                          <span className="font-bold text-emerald-600">+$7,500</span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-slate-500">Daily Rate</span>
-                          <span className="font-bold text-teal-600">8% of Sales</span>
-                        </div>
-                      </CardContent>
-                    </Card>
-                    <Button onClick={handleReset} className="w-full" size="lg">
-                      Done
-                    </Button>
-                  </div>
-                </DialogContent>
-              </Dialog>
-
-              {/* Interaction Area */}
-              <div className="bg-white p-4 border-t border-slate-200">
-                {chatScript[currentStep]?.sender === 'user' && !isTyping ? (
-                  <div className="flex gap-2">
-                    <Button
-                      onClick={handleAskClara}
-                      disabled={isExplaining}
-                      variant="outline"
-                      size="icon"
-                      className="bg-teal-50 hover:bg-teal-100 text-teal-600 border-teal-100"
-                    >
-                      {isExplaining ? <Loader size={18} className="animate-spin" /> : <Sparkles size={18} />}
-                    </Button>
-
-                    <Button onClick={handleUserReply} className="flex-1 animate-pulse" size="lg">
-                      {chatScript[currentStep].triggerLabel} <Send size={18} className="ml-2" />
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="h-12 bg-slate-50 rounded-xl border border-slate-200 flex items-center px-4 text-slate-400 text-sm">
-                    {isExplaining ? 'Clara is thinking...' : 'Type a message...'}
-                  </div>
-                )}
+          {screen === 'loading' && (
+            <div className="h-full flex items-center justify-center bg-slate-50">
+              <div className="text-center">
+                <div className="w-12 h-12 border-4 border-teal-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                <p className="text-slate-600 text-sm">Loading...</p>
               </div>
             </div>
           )}
+          {screen === 'lock' && <LockScreen />}
+          {screen === 'dashboard' && <DashboardScreen />}
+          {screen === 'voice' && <VoiceScreen />}
+          {screen === 'success' && <SuccessScreen />}
         </div>
       </div>
 
@@ -435,7 +386,7 @@ function MobileContent() {
                 variant="ghost"
                 className="w-full justify-start gap-3 h-12"
                 onClick={() => {
-                  router.push('/mobile');
+                  setScreen('dashboard');
                   setMenuOpen(false);
                 }}
               >

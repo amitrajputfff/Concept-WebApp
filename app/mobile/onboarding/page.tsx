@@ -339,10 +339,15 @@ function MobileOnboardingContent() {
     localStorage.setItem('propel_onboarding_complete_merchant', 'true');
     localStorage.setItem('propel_business_details', JSON.stringify(businessDetails));
     localStorage.setItem('propel_connections', JSON.stringify(connections));
+    // Set flag to show lock screen on mobile page - set this FIRST
+    sessionStorage.setItem('propel_just_completed_onboarding', 'true');
     setIsVerifying(false);
     setVerificationComplete(false);
     toast.success('Onboarding complete!');
-    router.push('/mobile');
+    // Use setTimeout to ensure sessionStorage is written before navigation
+    setTimeout(() => {
+      router.push('/mobile');
+    }, 100);
   };
 
   const handleConnectionChange = (category: Category, provider: string) => {
