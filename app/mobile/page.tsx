@@ -16,7 +16,6 @@ import {
   TrendingUp,
   Phone,
   PhoneOff,
-  Mic,
   Lock,
   Sparkles,
   Loader,
@@ -109,11 +108,11 @@ function MobileContent() {
   const [isLiaSpeaking, setIsLiaSpeaking] = useState(false);
   const [showNotification, setShowNotification] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [isListening, setIsListening] = useState(false);
   const [speechConfig, setSpeechConfig] = useState<{ key: string; region: string; voiceName: string } | null>(null);
   const [isLoadingSpeech, setIsLoadingSpeech] = useState(false);
+  const [liveTranscript, setLiveTranscript] = useState<string>('');
   const synthesizerRef = useRef<sdk.SpeechSynthesizer | null>(null);
-  const recognizerRef = useRef<sdk.SpeechRecognizer | null>(null);
+  const isSpeechInProgressRef = useRef<boolean>(false);
   const { user, logout } = useAuth();
   const router = useRouter();
 
@@ -182,32 +181,101 @@ function MobileContent() {
 
   // Handle Voice Flow with Azure TTS
   useEffect(() => {
+    // Prevent starting new speech if one is already in progress
+    if (isLiaSpeaking || isLoadingSpeech || isSpeechInProgressRef.current || synthesizerRef.current) {
+      return;
+    }
+    
     if (screen === 'voice' && currentStep < voiceScript.length) {
       const step = voiceScript[currentStep];
-      if (step.speaker === 'lia' && speechConfig) {
-        // Use Azure TTS to speak
-        speakWithAzureTTS(step.text, step.action === 'TRANSFER_COMPLETE');
-      } else if (step.speaker === 'lia' && !speechConfig) {
-        // Fallback to timer-based if Azure Speech not configured
-        setIsLiaSpeaking(true);
-        const timer = setTimeout(() => {
-          setIsLiaSpeaking(false);
-          if (step.action === 'TRANSFER_COMPLETE') {
-            setTimeout(() => setScreen('success'), 1000);
-          } else {
-            setCurrentStep(prev => prev + 1);
-          }
-        }, step.duration);
-        return () => clearTimeout(timer);
+      if (step.speaker === 'lia') {
+        // Double-check: prevent race conditions
+        if (isSpeechInProgressRef.current || synthesizerRef.current) {
+          return;
+        }
+        
+        // Mark speech as in progress IMMEDIATELY
+        isSpeechInProgressRef.current = true;
+        
+        // Set transcript immediately when Lia speaks
+        setLiveTranscript(step.text);
+        
+        if (speechConfig) {
+          // Use Azure TTS to speak
+          speakWithAzureTTS(step.text, step.action === 'TRANSFER_COMPLETE');
+        } else {
+          // Fallback to timer-based if Azure Speech not configured
+          setIsLiaSpeaking(true);
+          const timer = setTimeout(() => {
+            setIsLiaSpeaking(false);
+            isSpeechInProgressRef.current = false;
+            if (step.action === 'TRANSFER_COMPLETE') {
+              setTimeout(() => setScreen('success'), 1000);
+            } else {
+              setCurrentStep(prev => prev + 1);
+            }
+          }, step.duration);
+          return () => {
+            clearTimeout(timer);
+            isSpeechInProgressRef.current = false;
+          };
+        }
+      } else if (step.speaker === 'user') {
+        // Keep transcript showing user's response
+        // Transcript will update when Lia speaks next
       }
     }
+    
+    // Cleanup function to prevent memory leaks
+    return () => {
+      // Don't clean up if speech is in progress
+      if (!isSpeechInProgressRef.current && synthesizerRef.current) {
+        synthesizerRef.current.close();
+        synthesizerRef.current = null;
+      }
+    };
   }, [screen, currentStep, speechConfig]);
 
-  // Speak text using Azure TTS
+  // Speak text using Azure TTS with live transcript
   const speakWithAzureTTS = async (text: string, isLastMessage: boolean) => {
-    if (!speechConfig) return;
+    // Double-check: prevent multiple calls
+    if (isSpeechInProgressRef.current || synthesizerRef.current) {
+      console.warn('Speech already in progress, ignoring duplicate call');
+      return;
+    }
+    
+    // Set transcript immediately
+    setLiveTranscript(text);
+    
+    if (!speechConfig) {
+      // Fallback: show transcript and continue after delay
+      setIsLiaSpeaking(true);
+      const delay = Math.max(text.length * 50, 2000); // Estimate based on text length
+      setTimeout(() => {
+        setIsLiaSpeaking(false);
+        isSpeechInProgressRef.current = false; // Mark speech as complete
+        if (isLastMessage) {
+          setTimeout(() => setScreen('success'), 1000);
+        } else {
+          setCurrentStep(prev => prev + 1);
+        }
+      }, delay);
+      return;
+    }
 
     try {
+      // Final check before starting - close any existing synthesizer
+      const existingSynthesizer = synthesizerRef.current;
+      if (existingSynthesizer) {
+        console.warn('Synthesizer already exists, closing previous one');
+        try {
+          (existingSynthesizer as sdk.SpeechSynthesizer).close();
+        } catch (e) {
+          console.warn('Error closing existing synthesizer:', e);
+        }
+        synthesizerRef.current = null;
+      }
+      
       setIsLiaSpeaking(true);
       setIsLoadingSpeech(true);
 
@@ -223,17 +291,38 @@ function MobileContent() {
       // Create audio config
       const audioConfig = sdk.AudioConfig.fromDefaultSpeakerOutput();
 
-      // Create synthesizer
+      // Create synthesizer - only if one doesn't exist
+      if (synthesizerRef.current) {
+        console.warn('Synthesizer already exists, skipping creation');
+        return;
+      }
+      
       const synthesizer = new sdk.SpeechSynthesizer(speechConfigObj, audioConfig);
       synthesizerRef.current = synthesizer;
 
-      // Speak the text
-      synthesizer.speakTextAsync(
+      // Speak the text - use the ref to ensure we're using the correct synthesizer
+      const currentSynthesizer = synthesizerRef.current;
+      if (!currentSynthesizer) {
+        console.error('Synthesizer was cleared before speaking');
+        setIsLiaSpeaking(false);
+        setIsLoadingSpeech(false);
+        isSpeechInProgressRef.current = false;
+        return;
+      }
+
+      currentSynthesizer.speakTextAsync(
         text,
-        (result) => {
+        (result: any) => {
+          // Only process if this is still the current synthesizer
+          if (synthesizerRef.current !== currentSynthesizer) {
+            console.warn('Synthesizer changed during speech, ignoring result');
+            return;
+          }
+          
           setIsLiaSpeaking(false);
           setIsLoadingSpeech(false);
-          synthesizer.close();
+          isSpeechInProgressRef.current = false; // Mark speech as complete
+          currentSynthesizer.close();
           synthesizerRef.current = null;
 
           if (result.reason === sdk.ResultReason.SynthesizingAudioCompleted) {
@@ -252,11 +341,18 @@ function MobileContent() {
             }
           }
         },
-        (error) => {
+        (error: any) => {
+          // Only process if this is still the current synthesizer
+          if (synthesizerRef.current !== currentSynthesizer) {
+            console.warn('Synthesizer changed during speech, ignoring error');
+            return;
+          }
+          
           console.error('Speech synthesis error:', error);
           setIsLiaSpeaking(false);
           setIsLoadingSpeech(false);
-          synthesizer.close();
+          isSpeechInProgressRef.current = false; // Mark speech as complete
+          currentSynthesizer.close();
           synthesizerRef.current = null;
           toast.error('Speech synthesis failed. Continuing...');
           // Fallback: continue to next step
@@ -271,6 +367,7 @@ function MobileContent() {
       console.error('Azure TTS error:', error);
       setIsLiaSpeaking(false);
       setIsLoadingSpeech(false);
+      isSpeechInProgressRef.current = false; // Mark speech as complete
       toast.error('Failed to initialize speech. Continuing...');
       // Fallback: continue to next step
       if (isLastMessage) {
@@ -281,74 +378,16 @@ function MobileContent() {
     }
   };
 
-  // Handle user speech input with Azure STT
-  const handleUserSpeak = async () => {
-    if (!speechConfig) {
-      // Fallback: just advance step
-      setCurrentStep(prev => prev + 1);
+  // Handle user response (button click - no STT)
+  const handleUserSpeak = () => {
+    // Prevent advancing if Lia is still speaking
+    if (isLiaSpeaking || isLoadingSpeech) {
+      toast.info('Please wait for Lia to finish speaking...');
       return;
     }
-
-    try {
-      setIsListening(true);
-      setIsLoadingSpeech(true);
-
-      // Create speech config - English only
-      const speechConfigObj = sdk.SpeechConfig.fromSubscription(
-        speechConfig.key,
-        speechConfig.region
-      );
-      // Explicitly set to English (US) only - no other languages will be recognized
-      speechConfigObj.speechRecognitionLanguage = 'en-US';
-
-      // Create audio config (use default microphone)
-      const audioConfig = sdk.AudioConfig.fromDefaultMicrophoneInput();
-
-      // Create recognizer - will only recognize English (en-US)
-      const recognizer = new sdk.SpeechRecognizer(speechConfigObj, audioConfig);
-      recognizerRef.current = recognizer;
-
-      // Recognize speech
-      recognizer.recognizeOnceAsync(
-        (result) => {
-          setIsListening(false);
-          setIsLoadingSpeech(false);
-          recognizer.close();
-          recognizerRef.current = null;
-
-          if (result.reason === sdk.ResultReason.RecognizedSpeech) {
-            const recognizedText = result.text.trim();
-            console.log('Recognized:', recognizedText);
-            toast.success('Speech recognized!');
-            // Advance to next step
-            setCurrentStep(prev => prev + 1);
-          } else if (result.reason === sdk.ResultReason.NoMatch) {
-            toast.error('No speech detected. Please try again.');
-            setIsListening(false);
-            setIsLoadingSpeech(false);
-          } else {
-            toast.error('Speech recognition failed. Please try again.');
-            setIsListening(false);
-            setIsLoadingSpeech(false);
-          }
-        },
-        (error) => {
-          console.error('Speech recognition error:', error);
-          setIsListening(false);
-          setIsLoadingSpeech(false);
-          recognizer.close();
-          recognizerRef.current = null;
-          toast.error('Speech recognition failed. Please try again.');
-        }
-      );
-    } catch (error) {
-      console.error('Azure STT error:', error);
-      setIsListening(false);
-      setIsLoadingSpeech(false);
-      toast.error('Failed to initialize speech recognition. Continuing...');
-      // Fallback: just advance step
-      setCurrentStep(prev => prev + 1);
-    }
+    
+    // Simply advance to next step
+    setCurrentStep(prev => prev + 1);
   };
 
   const handleEndCall = () => {
@@ -357,16 +396,13 @@ function MobileContent() {
       synthesizerRef.current.close();
       synthesizerRef.current = null;
     }
-    if (recognizerRef.current) {
-      recognizerRef.current.close();
-      recognizerRef.current = null;
-    }
     
     // Reset voice state and return to dashboard
     setCurrentStep(0);
     setIsLiaSpeaking(false);
-    setIsListening(false);
     setIsLoadingSpeech(false);
+    isSpeechInProgressRef.current = false;
+    setLiveTranscript('');
     setScreen('dashboard');
   };
 
@@ -483,30 +519,46 @@ function MobileContent() {
                ))}
             </div>
 
-            {/* Captions */}
-            <div className="w-full max-w-xs text-center space-y-4">
-               {isLiaSpeaking || isLoadingSpeech ? (
-                  <div className="space-y-2">
-                     <p className="text-white text-lg font-medium leading-relaxed animate-in fade-in slide-in-from-bottom-2">
-                        "{step.text}"
-                     </p>
-                     {isLoadingSpeech && (
-                        <div className="flex items-center justify-center gap-2 text-teal-400">
-                           <Loader size={16} className="animate-spin" />
-                           <span className="text-sm">Processing speech...</span>
+            {/* Live Transcript */}
+            <div className="w-full max-w-md space-y-4">
+               {liveTranscript || (step && step.speaker === 'lia' && step.text) ? (
+                  <div className="bg-slate-800/80 backdrop-blur-md rounded-2xl p-6 border border-slate-700 shadow-xl">
+                     <div className="flex items-start gap-3 mb-3">
+                        <div className="w-8 h-8 bg-teal-600 rounded-full flex items-center justify-center flex-shrink-0">
+                           <span className="text-white text-xs font-bold">L</span>
+                        </div>
+                        <div className="flex-1">
+                           <div className="text-xs text-teal-400 font-semibold mb-2">Lia</div>
+                           <p className="text-white text-base leading-relaxed">
+                              {liveTranscript || (step && step.text)}
+                           </p>
+                        </div>
+                     </div>
+                     {isLiaSpeaking && (
+                        <div className="flex items-center gap-2 text-teal-400 text-xs mt-3 pt-3 border-t border-slate-700">
+                           <Loader size={12} className="animate-spin" />
+                           <span>Speaking...</span>
                         </div>
                      )}
                   </div>
-               ) : isListening ? (
-                  <div className="space-y-2">
-                     <p className="text-slate-500 italic">Listening...</p>
-                     <div className="flex items-center justify-center gap-2 text-teal-400">
-                        <Mic size={16} className="animate-pulse" />
-                        <span className="text-sm">Speak now</span>
+               ) : step && step.speaker === 'user' ? (
+                  <div className="bg-slate-800/80 backdrop-blur-md rounded-2xl p-6 border border-slate-700 shadow-xl">
+                     <div className="flex items-start gap-3">
+                        <div className="w-8 h-8 bg-slate-600 rounded-full flex items-center justify-center flex-shrink-0">
+                           <span className="text-white text-xs font-bold">{user?.name?.charAt(0) || 'M'}</span>
+                        </div>
+                        <div className="flex-1">
+                           <div className="text-xs text-slate-400 font-semibold mb-2">You</div>
+                           <p className="text-white text-base leading-relaxed">
+                              {step.text}
+                           </p>
+                        </div>
                      </div>
                   </div>
                ) : (
-                  <p className="text-slate-500 italic">Ready...</p>
+                  <div className="text-center">
+                     <p className="text-slate-500 italic">Ready...</p>
+                  </div>
                )}
             </div>
          </div>
@@ -517,21 +569,12 @@ function MobileContent() {
                <div className="space-y-3">
                   <button
                     onClick={handleUserSpeak}
-                    disabled={isListening || isLoadingSpeech}
+                    disabled={isLiaSpeaking || isLoadingSpeech}
                     className={`w-full bg-teal-600 hover:bg-teal-500 text-white font-bold py-4 rounded-2xl shadow-lg shadow-teal-900/50 flex items-center justify-center gap-3 transition-all transform active:scale-95 ${
-                      isListening || isLoadingSpeech ? 'opacity-50 cursor-not-allowed' : ''
+                      isLiaSpeaking || isLoadingSpeech ? 'opacity-50 cursor-not-allowed' : ''
                     }`}
                   >
-                     {isListening ? (
-                        <>
-                           <Loader size={24} className="animate-spin" />
-                           Listening...
-                        </>
-                     ) : (
-                        <>
-                           <Mic size={24} /> {step.triggerLabel}
-                        </>
-                     )}
+                     {step.triggerLabel}
                   </button>
                   <button
                     onClick={handleEndCall}
