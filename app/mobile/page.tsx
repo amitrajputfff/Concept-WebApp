@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { ProtectedRoute, useAuth } from '@/lib/auth-context';
 import { Button } from '@/components/ui/button';
@@ -19,7 +19,10 @@ import {
   Mic,
   Lock,
   Sparkles,
+  Loader,
 } from 'lucide-react';
+import * as sdk from 'microsoft-cognitiveservices-speech-sdk';
+import { toast } from 'sonner';
 
 // Voice Script - Natural Conversation Flow
 const voiceScript = [
@@ -106,8 +109,43 @@ function MobileContent() {
   const [isLiaSpeaking, setIsLiaSpeaking] = useState(false);
   const [showNotification, setShowNotification] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [speechConfig, setSpeechConfig] = useState<{ key: string; region: string; voiceName: string } | null>(null);
+  const [isLoadingSpeech, setIsLoadingSpeech] = useState(false);
+  const synthesizerRef = useRef<sdk.SpeechSynthesizer | null>(null);
+  const recognizerRef = useRef<sdk.SpeechRecognizer | null>(null);
   const { user, logout } = useAuth();
   const router = useRouter();
+
+  // Load Azure Speech configuration
+  useEffect(() => {
+    const loadSpeechConfig = async () => {
+      try {
+        const response = await fetch('/api/azure-speech');
+        const data = await response.json();
+        
+        if (data.configured && data.region) {
+          // Get the key from environment (we'll need to pass it from server)
+          // For now, we'll fetch it from a secure endpoint or use a token
+          const keyResponse = await fetch('/api/azure-speech/key');
+          const keyData = await keyResponse.json();
+          
+          if (keyData.key) {
+            setSpeechConfig({
+              key: keyData.key,
+              region: data.region,
+              voiceName: data.voiceName || 'en-US-JennyNeural', // Best quality English voice
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load Azure Speech config:', error);
+        // Continue without Azure Speech (fallback to text-based)
+      }
+    };
+
+    loadSpeechConfig();
+  }, []);
 
   // Check onboarding status and handle redirects
   useEffect(() => {
@@ -142,11 +180,15 @@ function MobileContent() {
     }
   }, [screen]);
 
-  // Handle Voice Flow
+  // Handle Voice Flow with Azure TTS
   useEffect(() => {
     if (screen === 'voice' && currentStep < voiceScript.length) {
       const step = voiceScript[currentStep];
-      if (step.speaker === 'lia') {
+      if (step.speaker === 'lia' && speechConfig) {
+        // Use Azure TTS to speak
+        speakWithAzureTTS(step.text, step.action === 'TRANSFER_COMPLETE');
+      } else if (step.speaker === 'lia' && !speechConfig) {
+        // Fallback to timer-based if Azure Speech not configured
         setIsLiaSpeaking(true);
         const timer = setTimeout(() => {
           setIsLiaSpeaking(false);
@@ -159,16 +201,172 @@ function MobileContent() {
         return () => clearTimeout(timer);
       }
     }
-  }, [screen, currentStep]);
+  }, [screen, currentStep, speechConfig]);
 
-  const handleUserSpeak = () => {
-    setCurrentStep(prev => prev + 1);
+  // Speak text using Azure TTS
+  const speakWithAzureTTS = async (text: string, isLastMessage: boolean) => {
+    if (!speechConfig) return;
+
+    try {
+      setIsLiaSpeaking(true);
+      setIsLoadingSpeech(true);
+
+      // Create speech config
+      const speechConfigObj = sdk.SpeechConfig.fromSubscription(
+        speechConfig.key,
+        speechConfig.region
+      );
+      // Explicitly set to English (US) only for TTS
+      speechConfigObj.speechSynthesisLanguage = 'en-US';
+      speechConfigObj.speechSynthesisVoiceName = speechConfig.voiceName || 'en-US-JennyNeural';
+
+      // Create audio config
+      const audioConfig = sdk.AudioConfig.fromDefaultSpeakerOutput();
+
+      // Create synthesizer
+      const synthesizer = new sdk.SpeechSynthesizer(speechConfigObj, audioConfig);
+      synthesizerRef.current = synthesizer;
+
+      // Speak the text
+      synthesizer.speakTextAsync(
+        text,
+        (result) => {
+          setIsLiaSpeaking(false);
+          setIsLoadingSpeech(false);
+          synthesizer.close();
+          synthesizerRef.current = null;
+
+          if (result.reason === sdk.ResultReason.SynthesizingAudioCompleted) {
+            if (isLastMessage) {
+              setTimeout(() => setScreen('success'), 1000);
+            } else {
+              setCurrentStep(prev => prev + 1);
+            }
+          } else {
+            console.error('Speech synthesis failed:', result.reason);
+            // Fallback: continue to next step
+            if (isLastMessage) {
+              setTimeout(() => setScreen('success'), 1000);
+            } else {
+              setCurrentStep(prev => prev + 1);
+            }
+          }
+        },
+        (error) => {
+          console.error('Speech synthesis error:', error);
+          setIsLiaSpeaking(false);
+          setIsLoadingSpeech(false);
+          synthesizer.close();
+          synthesizerRef.current = null;
+          toast.error('Speech synthesis failed. Continuing...');
+          // Fallback: continue to next step
+          if (isLastMessage) {
+            setTimeout(() => setScreen('success'), 1000);
+          } else {
+            setCurrentStep(prev => prev + 1);
+          }
+        }
+      );
+    } catch (error) {
+      console.error('Azure TTS error:', error);
+      setIsLiaSpeaking(false);
+      setIsLoadingSpeech(false);
+      toast.error('Failed to initialize speech. Continuing...');
+      // Fallback: continue to next step
+      if (isLastMessage) {
+        setTimeout(() => setScreen('success'), 1000);
+      } else {
+        setCurrentStep(prev => prev + 1);
+      }
+    }
+  };
+
+  // Handle user speech input with Azure STT
+  const handleUserSpeak = async () => {
+    if (!speechConfig) {
+      // Fallback: just advance step
+      setCurrentStep(prev => prev + 1);
+      return;
+    }
+
+    try {
+      setIsListening(true);
+      setIsLoadingSpeech(true);
+
+      // Create speech config - English only
+      const speechConfigObj = sdk.SpeechConfig.fromSubscription(
+        speechConfig.key,
+        speechConfig.region
+      );
+      // Explicitly set to English (US) only - no other languages will be recognized
+      speechConfigObj.speechRecognitionLanguage = 'en-US';
+
+      // Create audio config (use default microphone)
+      const audioConfig = sdk.AudioConfig.fromDefaultMicrophoneInput();
+
+      // Create recognizer - will only recognize English (en-US)
+      const recognizer = new sdk.SpeechRecognizer(speechConfigObj, audioConfig);
+      recognizerRef.current = recognizer;
+
+      // Recognize speech
+      recognizer.recognizeOnceAsync(
+        (result) => {
+          setIsListening(false);
+          setIsLoadingSpeech(false);
+          recognizer.close();
+          recognizerRef.current = null;
+
+          if (result.reason === sdk.ResultReason.RecognizedSpeech) {
+            const recognizedText = result.text.trim();
+            console.log('Recognized:', recognizedText);
+            toast.success('Speech recognized!');
+            // Advance to next step
+            setCurrentStep(prev => prev + 1);
+          } else if (result.reason === sdk.ResultReason.NoMatch) {
+            toast.error('No speech detected. Please try again.');
+            setIsListening(false);
+            setIsLoadingSpeech(false);
+          } else {
+            toast.error('Speech recognition failed. Please try again.');
+            setIsListening(false);
+            setIsLoadingSpeech(false);
+          }
+        },
+        (error) => {
+          console.error('Speech recognition error:', error);
+          setIsListening(false);
+          setIsLoadingSpeech(false);
+          recognizer.close();
+          recognizerRef.current = null;
+          toast.error('Speech recognition failed. Please try again.');
+        }
+      );
+    } catch (error) {
+      console.error('Azure STT error:', error);
+      setIsListening(false);
+      setIsLoadingSpeech(false);
+      toast.error('Failed to initialize speech recognition. Continuing...');
+      // Fallback: just advance step
+      setCurrentStep(prev => prev + 1);
+    }
   };
 
   const handleEndCall = () => {
+    // Clean up speech resources
+    if (synthesizerRef.current) {
+      synthesizerRef.current.close();
+      synthesizerRef.current = null;
+    }
+    if (recognizerRef.current) {
+      recognizerRef.current.close();
+      recognizerRef.current = null;
+    }
+    
     // Reset voice state and return to dashboard
     setCurrentStep(0);
     setIsLiaSpeaking(false);
+    setIsListening(false);
+    setIsLoadingSpeech(false);
     setScreen('dashboard');
   };
 
@@ -287,12 +485,28 @@ function MobileContent() {
 
             {/* Captions */}
             <div className="w-full max-w-xs text-center space-y-4">
-               {isLiaSpeaking ? (
-                  <p className="text-white text-lg font-medium leading-relaxed animate-in fade-in slide-in-from-bottom-2">
-                     "{step.text}"
-                  </p>
+               {isLiaSpeaking || isLoadingSpeech ? (
+                  <div className="space-y-2">
+                     <p className="text-white text-lg font-medium leading-relaxed animate-in fade-in slide-in-from-bottom-2">
+                        "{step.text}"
+                     </p>
+                     {isLoadingSpeech && (
+                        <div className="flex items-center justify-center gap-2 text-teal-400">
+                           <Loader size={16} className="animate-spin" />
+                           <span className="text-sm">Processing speech...</span>
+                        </div>
+                     )}
+                  </div>
+               ) : isListening ? (
+                  <div className="space-y-2">
+                     <p className="text-slate-500 italic">Listening...</p>
+                     <div className="flex items-center justify-center gap-2 text-teal-400">
+                        <Mic size={16} className="animate-pulse" />
+                        <span className="text-sm">Speak now</span>
+                     </div>
+                  </div>
                ) : (
-                  <p className="text-slate-500 italic">Listening...</p>
+                  <p className="text-slate-500 italic">Ready...</p>
                )}
             </div>
          </div>
@@ -303,9 +517,21 @@ function MobileContent() {
                <div className="space-y-3">
                   <button
                     onClick={handleUserSpeak}
-                    className="w-full bg-teal-600 hover:bg-teal-500 text-white font-bold py-4 rounded-2xl shadow-lg shadow-teal-900/50 flex items-center justify-center gap-3 transition-all transform active:scale-95"
+                    disabled={isListening || isLoadingSpeech}
+                    className={`w-full bg-teal-600 hover:bg-teal-500 text-white font-bold py-4 rounded-2xl shadow-lg shadow-teal-900/50 flex items-center justify-center gap-3 transition-all transform active:scale-95 ${
+                      isListening || isLoadingSpeech ? 'opacity-50 cursor-not-allowed' : ''
+                    }`}
                   >
-                     <Mic size={24} /> {step.triggerLabel}
+                     {isListening ? (
+                        <>
+                           <Loader size={24} className="animate-spin" />
+                           Listening...
+                        </>
+                     ) : (
+                        <>
+                           <Mic size={24} /> {step.triggerLabel}
+                        </>
+                     )}
                   </button>
                   <button
                     onClick={handleEndCall}
